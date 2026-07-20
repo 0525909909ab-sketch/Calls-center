@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel
 from app.DB.connection import get_db
+from app.utils.auth import require_manager
+
 
 router = APIRouter(prefix="/api", tags=["Shift Schedule & Operations"])
 
@@ -51,7 +53,7 @@ async def get_workforce_data(db = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Failed to fetch workforce data: {str(e)}")
 
 @router.post("/toggle-assignment")
-async def toggle_assignment(request: ToggleAssignmentRequest, db = Depends(get_db)):
+async def toggle_assignment(request: ToggleAssignmentRequest, current_user = Depends(require_manager), db = Depends(get_db)):
     try:
         with db.cursor() as cursor:
             # בדיקה האם האיוש כבר קיים
