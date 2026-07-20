@@ -1,3 +1,4 @@
+// src/components/ManagerExcelUpload.jsx
 import React, { useState } from "react";
 
 export const ManagerExcelUpload = ({ onUploadSuccess }) => {
@@ -37,30 +38,33 @@ export const ManagerExcelUpload = ({ onUploadSuccess }) => {
 
   return (
     <div style={{
-      backgroundColor: "rgba(30, 41, 59, 0.4)",
-      padding: "24px",
-      borderRadius: "12px",
-      border: "1px solid rgba(255,255,255,0.06)",
-      textAlign: "center"
+      backgroundColor: "#ffffff",
+      padding: "20px 24px",
+      borderRadius: "8px",
+      border: "1px solid #e2e8f0",
+      boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
+      textAlign: "center",
+      fontFamily: "Arial, sans-serif"
     }}>
-      <h4 style={{ margin: "0 0 12px 0", color: "#f8fafc", fontSize: "1.1rem" }}>
-        📁 Manual Forecast Excel Upload 
+      <h4 style={{ margin: "0 0 8px 0", color: "#1e293b", fontSize: "1.1rem", fontWeight: "bold" }}>
+        📁 Manual Forecast CSV Upload
       </h4>
-      <p style={{ color: "#94a3b8", fontSize: "13px", marginBottom: "16px", maxWidth: "400px", margin: "0 auto 16px auto" }}>
+      <p style={{ color: "#64748b", fontSize: "14px", marginBottom: "16px", maxWidth: "550px", margin: "0 auto 16px auto", lineHeight: "1.4" }}>
         If an employee forgot to log a call, the manager can upload an updated CSV file here to insert it directly into PostgreSQL.
       </p>
 
       <label style={{
         display: "inline-block",
         padding: "10px 20px",
-        backgroundColor: uploading ? "rgba(255,255,255,0.05)" : "#38bdf8",
-        color: uploading ? "#64748b" : "#0f172a",
-        borderRadius: "8px",
+        backgroundColor: uploading ? "#cbd5e1" : "#007bff",
+        color: uploading ? "#475569" : "#ffffff",
+        borderRadius: "6px",
         fontWeight: "bold",
+        fontSize: "14px",
         cursor: uploading ? "not-allowed" : "pointer",
-        transition: "background-color 0.2s"
+        transition: "all 0.2s ease"
       }}>
-        {uploading ? "⏳ Pandas library is analyzing file..." : "📥 Select CSV File to Upload Live"}
+        {uploading ? "⏳ Analyzing file..." : "📥 Select CSV File to Upload Live"}
         <input 
           type="file" 
           accept=".csv" 
@@ -72,3 +76,5 @@ export const ManagerExcelUpload = ({ onUploadSuccess }) => {
     </div>
   );
 };
+
+export default ManagerExcelUpload;
