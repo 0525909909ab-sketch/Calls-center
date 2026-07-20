@@ -1,26 +1,43 @@
-// src/components/CoverageWarnings.jsx
 import React from 'react';
 
-export const CoverageWarnings = ({ scheduleData = [], employees = [] }) => {
+export const CoverageWarnings = ({ warnings = [] }) => {
+  if (warnings.length === 0) {
+    return (
+      <div style={{ padding: '16px', backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981', borderRadius: '8px', border: '1px solid #10b981', direction: 'ltr', textAlign: 'left' }}>
+        ✅ <strong>Schedule Status OK:</strong> No coverage issues or employee hour limits exceeded in the current schedule.
+      </div>
+    );
+  }
+
   return (
-    <div style={{
-      backgroundColor: '#ffffff',
-      padding: '20px',
-      borderRadius: '8px',
-      border: '1px solid #fecaca',
-      borderLeft: '5px solid #ef4444',
-      boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-      marginTop: '25px',
-      fontFamily: 'Arial, sans-serif'
-    }}>
-      <h3 style={{ color: '#dc2626', margin: '0 0 8px 0', fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-        ⚠️ Coverage Warnings & Shift Exceptions
-      </h3>
-      <p style={{ color: '#4b5563', fontSize: '14px', margin: 0 }}>
-        No critical understaffing or hour-limit violations detected for the selected period.
-      </p>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', direction: 'ltr', textAlign: 'left', fontFamily: 'sans-serif' }}>
+      <h3 style={{ margin: '0 0 4px 0', color: '#f43f5e', fontSize: '18px' }}>🚨 Operational Alerts & Coverage Risks:</h3>
+      
+      {warnings.map((warning) => (
+        <div 
+          key={warning.id} 
+          style={{
+            padding: '14px 16px',
+            backgroundColor: '#1e293b',
+            borderLeft: `5px solid ${warning.severity === 'high' ? '#f43f5e' : '#f59e0b'}`,
+            borderRadius: '8px',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+          }}
+        >
+          <strong style={{ display: 'block', color: warning.severity === 'high' ? '#f43f5e' : '#f59e0b', marginBottom: '4px', fontSize: '15px' }}>
+            {warning.title}
+          </strong>
+          <p style={{ fontSize: '14px', color: '#94a3b8', margin: '0 0 6px 0' }}>
+            {warning.description}
+          </p>
+          
+          {warning.reason && (
+            <div style={{ marginTop: '8px', padding: '6px 10px', backgroundColor: 'rgba(244, 63, 94, 0.1)', border: '1px dashed rgba(244, 63, 94, 0.3)', borderRadius: '4px', fontSize: '13px', color: '#fda4af' }}>
+              💡 <strong>System Analysis:</strong> {warning.reason}
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 };
-
-export default CoverageWarnings;
