@@ -11,7 +11,7 @@ import { CoverageWarnings } from '../components/CoverageWarnings';
 
 const DashboardPage = () => {
   const [timeframe, setTimeframe] = useState('daily');
-  const [selectedDate, setSelectedDate] = useState('2026-07-20');
+  const [selectedDate, setSelectedDate] = useState('2026-06-28');
   const [dashboardData, setDashboardData] = useState([]);
   const [loading, setLoading] = useState(true);
 

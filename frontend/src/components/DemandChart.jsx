@@ -2,6 +2,10 @@
 import React from 'react';
 import "../services/api"
 
+const calculateRequiredStaff = (volume, duration) => {
+  if (!volume || !duration) return 0;
+  return Math.ceil(volume / (3600 / duration));
+};
 const DemandChart = ({ data, timeframe }) => {
   return (
     <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', marginBottom: '25px' }}>

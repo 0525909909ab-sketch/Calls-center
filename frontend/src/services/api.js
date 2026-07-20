@@ -1,5 +1,5 @@
 // src/services/api.js
-const API_BASE_URL = "http://localhost:8000";
+const API_BASE_URL = "http://127.0.0.1:8000";
 
 // 1. שליפת נתוני דשבורד מנהל (GET /api/dashboard)
 export const fetchDashboardData = async (timeframe = 'daily', date = '2026-07-20') => {
