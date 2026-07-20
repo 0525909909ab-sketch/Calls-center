@@ -41,8 +41,8 @@ const DashboardPage = () => {
   const activeData = getProcessedData();
 
   const totalCalls = activeData.reduce((acc, item) => acc + item.predicted_volume, 0);
-  const totalDurationHours = Math.round((totalCalls * 180) / 3600);
-  
+  const totalDurationHours = Math.round((totalCalls * 900) / 3600);
+
   const requiredStaff = activeData.reduce((acc, item) => {
     return acc + calculateRequiredStaff(item.predicted_volume, item.average_call_duration);
   }, 0);

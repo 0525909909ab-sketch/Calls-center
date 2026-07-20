@@ -3,6 +3,7 @@ import React from 'react';
 import { createBrowserRouter, RouterProvider, Link, Outlet } from 'react-router-dom';
 import DashboardPage from './pages/DashboardPage';
 import { SchedulePage } from './pages/SchedulePage';
+import { EmployeePage } from './pages/EmployeePage'; 
 
 // Light-themed navigation bar
 const Layout = () => (
@@ -22,18 +23,11 @@ const Layout = () => (
       <Link to="/schedule" style={{ color: '#007bff', textDecoration: 'none', fontWeight: 'bold' }}>
         📅 Shift Schedule
       </Link>
-      <Link to="/employee" style={{ color: '#6c757d', textDecoration: 'none', fontWeight: 'bold' }}>
-        🎧 Employee Page
+      <Link to="/employee" style={{ color: '#007bff', textDecoration: 'none', fontWeight: 'bold' }}>
+        🎧 Agent Portal
       </Link>
     </nav>
     <Outlet />
-  </div>
-);
-
-// Temporary placeholder for the Employee Page
-const EmployeePage = () => (
-  <div style={{ padding: '30px', color: '#333', backgroundColor: '#f8f9fa', minHeight: '100vh', fontFamily: 'Arial, sans-serif' }}>
-    <h2>🎧 Employee Page (Under Construction)</h2>
   </div>
 );
 

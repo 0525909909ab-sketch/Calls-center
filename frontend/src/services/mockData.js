@@ -2,14 +2,14 @@
 
 // 1. Call forecast predictions by hour (from hourly_call_forecast table)
 export const mockHourlyForecast = [
-  { timestamp: '2026-07-20T08:00:00', predicted_volume: 20, average_call_duration: 180 },
-  { timestamp: '2026-07-20T09:00:00', predicted_volume: 45, average_call_duration: 180 },
-  { timestamp: '2026-07-20T10:00:00', predicted_volume: 65, average_call_duration: 180 }, // Peak hour
-  { timestamp: '2026-07-20T11:00:00', predicted_volume: 40, average_call_duration: 180 },
-  { timestamp: '2026-07-20T12:00:00', predicted_volume: 25, average_call_duration: 180 },
-  { timestamp: '2026-07-20T13:00:00', predicted_volume: 50, average_call_duration: 180 },
-  { timestamp: '2026-07-20T14:00:00', predicted_volume: 55, average_call_duration: 180 },
-  { timestamp: '2026-07-20T15:00:00', predicted_volume: 30, average_call_duration: 180 },
+  { timestamp: '2026-07-20T08:00:00', predicted_volume: 20, average_call_duration: 900 },
+  { timestamp: '2026-07-20T09:00:00', predicted_volume: 45, average_call_duration: 900 },
+  { timestamp: '2026-07-20T10:00:00', predicted_volume: 65, average_call_duration: 900 },
+  { timestamp: '2026-07-20T11:00:00', predicted_volume: 40, average_call_duration: 900 },
+  { timestamp: '2026-07-20T12:00:00', predicted_volume: 25, average_call_duration: 900 },
+  { timestamp: '2026-07-20T13:00:00', predicted_volume: 50, average_call_duration: 900 },
+  { timestamp: '2026-07-20T14:00:00', predicted_volume: 55, average_call_duration: 900 },
+  { timestamp: '2026-07-20T15:00:00', predicted_volume: 30, average_call_duration: 900 },
 ];
 
 // 2. Employee roster and details (from employees table)
@@ -30,9 +30,7 @@ export const mockSchedule = [
 ];
 
 // 💡 Helper function to calculate required staffing:
-// Average call duration = 180 seconds (3 minutes). 1 hour = 3600 seconds.
-// A single agent can handle 20 calls per hour (3600 / 180 = 20).
-export const calculateRequiredStaff = (predictedVolume, avgDurationSec = 180) => {
-  const callsPerWorkerPerHour = 3600 / avgDurationSec;
+export const calculateRequiredStaff = (predictedVolume, avgDurationSec = 900) => { // 👈 שינוי ל-900 שניות (15 דקות)
+  const callsPerWorkerPerHour = 3600 / avgDurationSec; // 3600 / 900 = 4 שיחות בשעה
   return Math.ceil(predictedVolume / callsPerWorkerPerHour);
 };
