@@ -32,3 +32,12 @@ CREATE TABLE employee_schedule (
     is_manual_edit BOOLEAN DEFAULT FALSE,
     UNIQUE(employee_id, timestamp)
 );
+CREATE TABLE employee_day_off (
+    id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    employee_id integer NOT NULL,
+    blocked_date date NOT NULL,
+    reason varchar(255),
+    created_at timestamp DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
+    CONSTRAINT uq_employee_date UNIQUE (employee_id, blocked_date),
+    CONSTRAINT fk_employee_day_off_employees FOREIGN KEY (employee_id) REFERENCES employees (id) ON DELETE CASCADE
+);
