@@ -6,7 +6,7 @@ import DemandChart from '../components/DemandChart';
 import { mockHourlyForecast, calculateRequiredStaff, mockEmployees, mockSchedule } from '../services/mockData';
 
 // Importing components built by Developer B
-import { ManagerExcelUpload } from '../components/ManagerExcelUpload';
+import { ManagerExcelUpload } from '../components/ManagerExcelActions';
 import { CoverageWarnings } from '../components/CoverageWarnings';
 
 const DashboardPage = () => {
