@@ -1,6 +1,6 @@
 // src/components/DemandChart.jsx
 import React from 'react';
-import { calculateRequiredStaff } from '../services/mockData';
+import "../services/api"
 
 const DemandChart = ({ data, timeframe }) => {
   return (

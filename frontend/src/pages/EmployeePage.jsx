@@ -1,29 +1,39 @@
 // src/pages/EmployeePage.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import CustomerCallForm from '../components/CustomerCallForm';
 import MyScheduledCalls from '../components/MyScheduledCalls';
+import { createScheduledCall, fetchScheduledCalls } from '../services/api';
 
 export const EmployeePage = () => {
-  // Mock initial calls for agent
-  const [scheduledCalls, setScheduledCalls] = useState([
-    {
-      id: 1,
-      customer_name: 'Rachel Green',
-      scheduled_time: '2026-07-20T14:30:00',
-      estimated_duration_minutes: 15,
-      status: 'Scheduled'
-    },
-    {
-      id: 2,
-      customer_name: 'Michael Scott',
-      scheduled_time: '2026-07-20T16:00:00',
-      estimated_duration_minutes: 30,
-      status: 'Scheduled'
-    }
-  ]);
+  const [scheduledCalls, setScheduledCalls] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const currentEmployeeId = 1; // Example logged in agent
 
-  const handleAddCall = (newCall) => {
-    setScheduledCalls((prev) => [newCall, ...prev]);
+  const loadCalls = async () => {
+    setLoading(true);
+    const data = await fetchScheduledCalls(currentEmployeeId);
+    setScheduledCalls(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    loadCalls();
+  }, []);
+
+  const handleAddCall = async (newCall) => {
+    const payload = {
+      employee_id: currentEmployeeId,
+      customer_name: newCall.customer_name,
+      scheduled_time: newCall.scheduled_time,
+      estimated_duration_minutes: newCall.estimated_duration_minutes
+    };
+
+    const success = await createScheduledCall(payload);
+    if (success) {
+      loadCalls();
+    } else {
+      alert("❌ Failed to save call in database.");
+    }
   };
 
   return (
@@ -39,11 +49,15 @@ export const EmployeePage = () => {
         </h1>
       </div>
 
-      {/* 1. Form Component */}
+      {/* 1. Call Form */}
       <CustomerCallForm onAddCall={handleAddCall} />
 
-      {/* 2. List Component */}
-      <MyScheduledCalls calls={scheduledCalls} />
+      {/* 2. Scheduled Calls Table */}
+      {loading ? (
+        <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>⏳ Loading agent calls...</div>
+      ) : (
+        <MyScheduledCalls calls={scheduledCalls} />
+      )}
 
     </div>
   );
