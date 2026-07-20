@@ -12,11 +12,17 @@ class ToggleAssignmentRequest(BaseModel):
 async def get_workforce_data(db = Depends(get_db)):
     try:
         with db.cursor() as cursor:
-            # 1. שליפת כל העובדים
-            cursor.execute("SELECT id, name, role, max_hours_per_day FROM employees;")
+            # 1. שליפת כל העובדים כולל מגבלת רצף השעות להפסקות
+            cursor.execute("SELECT id, name, role, max_hours_per_day, max_consecutive_hours FROM employees;")
             emp_rows = cursor.fetchall()
             employees = [
-                {"id": r[0], "name": r[1], "role": r[2], "max_hours_per_day": r[3]}
+                {
+                    "id": r[0], 
+                    "name": r[1], 
+                    "role": r[2], 
+                    "max_hours_per_day": r[3],
+                    "max_consecutive_hours": r[4] if r[4] else 4  # ברירת מחדל של 4 שעות רצופות אם חסר
+                }
                 for r in emp_rows
             ]
 
@@ -37,6 +43,7 @@ async def get_workforce_data(db = Depends(get_db)):
             
             schedule = [
                 {
+                    "timestamp": r[0].isoformat(),         # הוסף כדי שמנוע האזהרות יעבוד מושלם
                     "time_block": r[0].strftime("%H:%M"),
                     "predicted_volume": r[1],
                     "avg_duration_sec": r[2],
