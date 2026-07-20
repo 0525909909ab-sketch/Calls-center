@@ -54,51 +54,141 @@ async def get_admin_dashboard(
         try:
             with conn.cursor() as cursor:
                 base_date = datetime.strptime(date, "%Y-%m-%d").date()
+                
+                # ==========================================
+                # 1. תצוגה יומית (רזולוציה שעתית)
+                # ==========================================
                 if timeframe == "daily":
                     end_date = base_date + timedelta(days=1)
+                    query = """
+                        SELECT 
+                            f.timestamp, 
+                            f.predicted_volume, 
+                            f.average_call_duration, 
+                            f.actual_volume,
+                            COALESCE(COUNT(s.id), 0) as assigned_agents
+                        FROM hourly_call_forecast f
+                        LEFT JOIN employee_schedule s ON f.timestamp = s.timestamp
+                        WHERE f.timestamp >= %s AND f.timestamp < %s
+                        GROUP BY f.timestamp, f.predicted_volume, f.average_call_duration, f.actual_volume
+                        ORDER BY f.timestamp ASC;
+                    """
+                    cursor.execute(query, (base_date, end_date))
+                    rows = cursor.fetchall()
+                    
+                    result = []
+                    for row in rows:
+                        ts = row[0]
+                        predicted = row[1]
+                        avg_duration = row[2]
+                        total_work_seconds = predicted * avg_duration
+                        required_agents = max(1, math.ceil(total_work_seconds / 3600.0))
+                        
+                        result.append(
+                            DashboardDataResponse(
+                                timestamp=ts,
+                                predicted_volume=predicted,
+                                average_call_duration=avg_duration,
+                                actual_volume=row[3],
+                                required_agents=required_agents,
+                                assigned_agents=row[4],
+                                label=ts.strftime("%H:%M")  
+                            )
+                        )
+                    return result
+                    
+                # ==========================================
+                # 2. תצוגה שבועית (רזולוציה יומית)
+                # ==========================================
                 elif timeframe == "weekly":
                     end_date = base_date + timedelta(weeks=1)
-                else: 
-                    end_date = base_date + timedelta(days=30)
-                                 
-                query = """
-                    SELECT 
-                        f.timestamp, 
-                        f.predicted_volume, 
-                        f.average_call_duration, 
-                        f.actual_volume,
-                        COALESCE(COUNT(s.id), 0) as assigned_agents
-                    FROM hourly_call_forecast f
-                    LEFT JOIN employee_schedule s ON f.timestamp = s.timestamp
-                    WHERE f.timestamp >= %s AND f.timestamp < %s
-                    GROUP BY f.timestamp, f.predicted_volume, f.average_call_duration, f.actual_volume
-                    ORDER BY f.timestamp ASC;
-                """
-                cursor.execute(query, (base_date, end_date))
-                rows = cursor.fetchall()
-                                 
-                result = []
-                for row in rows:
-                    ts = row[0]
-                    predicted = row[1]
-                    avg_duration = row[2]
-                    total_work_seconds = predicted * avg_duration
-                    required_agents = max(1, math.ceil(total_work_seconds / 3600.0))
-                                         
-                    result.append(
-                        DashboardDataResponse(
-                            timestamp=ts,
-                            predicted_volume=predicted,
-                            average_call_duration=avg_duration,
-                            actual_volume=row[3],
-                            required_agents=required_agents,
-                            assigned_agents=row[4],
-                            label=ts.strftime("%H:%M")  
+                    query = """
+                        SELECT 
+                            DATE(f.timestamp) as day_date, 
+                            SUM(f.predicted_volume) as predicted_volume, 
+                            MAX(f.average_call_duration) as average_call_duration, 
+                            SUM(f.actual_volume) as actual_volume,
+                            COALESCE(COUNT(s.id), 0) as assigned_agents
+                        FROM hourly_call_forecast f
+                        LEFT JOIN employee_schedule s ON f.timestamp = s.timestamp
+                        WHERE f.timestamp >= %s AND f.timestamp < %s
+                        GROUP BY DATE(f.timestamp)
+                        ORDER BY day_date ASC;
+                    """
+                    cursor.execute(query, (base_date, end_date))
+                    rows = cursor.fetchall()
+                    
+                    result = []
+                    for row in rows:
+                        day_date = row[0]
+                        ts = datetime.combine(day_date, datetime.min.time()) 
+                        predicted = int(row[1]) if row[1] else 0
+                        avg_duration = int(row[2]) if row[2] else 180
+                        actual = int(row[3]) if row[3] else 0
+                        
+                        total_work_seconds = predicted * avg_duration
+                        required_agents = max(1, math.ceil(total_work_seconds / 3600.0))
+                        
+                        result.append(
+                            DashboardDataResponse(
+                                timestamp=ts,
+                                predicted_volume=predicted,
+                                average_call_duration=avg_duration,
+                                actual_volume=actual,
+                                required_agents=required_agents,
+                                assigned_agents=row[4],
+                                label=ts.strftime("%A, %d/%m")
+                            )
                         )
-                    )
-                return result
+                    return result
+
+                # ==========================================
+                # 3. תצוגה חודשית (רזולוציה שבועית!)
+                # ==========================================
+                elif timeframe == "monthly":
+                    end_date = base_date + timedelta(days=30)
+                    query = """
+                        SELECT 
+                            DATE_TRUNC('week', f.timestamp)::DATE as week_start, 
+                            SUM(f.predicted_volume) as predicted_volume, 
+                            MAX(f.average_call_duration) as average_call_duration, 
+                            SUM(f.actual_volume) as actual_volume,
+                            COALESCE(COUNT(s.id), 0) as assigned_agents
+                        FROM hourly_call_forecast f
+                        LEFT JOIN employee_schedule s ON f.timestamp = s.timestamp
+                        WHERE f.timestamp >= %s AND f.timestamp < %s
+                        GROUP BY DATE_TRUNC('week', f.timestamp)
+                        ORDER BY week_start ASC;
+                    """
+                    cursor.execute(query, (base_date, end_date))
+                    rows = cursor.fetchall()
+                    
+                    result = []
+                    for row in rows:
+                        week_start = row[0]
+                        ts = datetime.combine(week_start, datetime.min.time()) 
+                        predicted = int(row[1]) if row[1] else 0
+                        avg_duration = int(row[2]) if row[2] else 180
+                        actual = int(row[3]) if row[3] else 0
+                        
+                        total_work_seconds = predicted * avg_duration
+                        required_agents = max(1, math.ceil(total_work_seconds / 3600.0))
+                        
+                        result.append(
+                            DashboardDataResponse(
+                                timestamp=ts,
+                                predicted_volume=predicted,
+                                average_call_duration=avg_duration,
+                                actual_volume=actual,
+                                required_agents=required_agents,
+                                assigned_agents=row[4],
+                                label=f"Week {ts.strftime('%d/%m')}" # כיתוב שמראה את תחילת השבוע
+                            )
+                        )
+                    return result
+
         finally:
             conn.close()
-                 
+            
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Dashboard fetch failed: {str(e)}")

@@ -41,9 +41,7 @@ def import_employees(file_path, cursor):
         )
         for _, row in df.iterrows()
     ]
-    
-    # Clean old records before inserting to prevent duplication during testing
-    cursor.execute("TRUNCATE TABLE employees CASCADE;")
+
     
     insert_query = """
         INSERT INTO employees 
