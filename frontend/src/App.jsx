@@ -1,16 +1,29 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+import DashboardPage from './pages/DashboardPage';
+//import SchedulePage from './pages/SchedulePage';
+//import EmployeePage from './pages/EmployeePage';
+
+// Temporary placeholders to avoid import errors until those pages are built
+const SchedulePage = () => <div style={{ padding: '20px' }}>Schedule Page (Under Construction)</div>;
+const EmployeePage = () => <div style={{ padding: '20px' }}>Employee Page (Under Construction)</div>;
+
+const router = createBrowserRouter([
+  {
+    path: '/',
+    element: <DashboardPage />,
+  },
+  {
+    path: '/schedule',
+    element: <SchedulePage />,
+  },
+  {
+    path: '/employee',
+    element: <EmployeePage />,
+  },
+]);
 
 function App() {
- 
-
-  return (
-    <>
-    </>
-  )
+  return <RouterProvider router={router} />;
 }
 
-export default App
+export default App;
