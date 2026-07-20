@@ -1,2 +1,30 @@
-node_modules/
+# Virtual Environment (סביבה וירטואלית של פייתון - כבדה מאוד ולא מעלים לגיט)
+.venv/
+venv/
+ENV/
+env/
+
+# Python artifacts (קבצים אוטומטיים שפייתון מייצר בזמן ריצה)
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Environment Variables & Secrets (קבצים שמכילים סיסמאות וחיבורים ל-Neon)
 .env
+.env.local
+
+# Local Data / Raw Excel Files (קבצי האקסל שהורדת או יצרת לבדיקות מקומיות)
+*.xlsx
+*.csv
+.DS_Store
+
+# IDEs and Editors (הגדרות אישיות של עורך הקוד שלך)
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
