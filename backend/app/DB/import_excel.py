@@ -1,6 +1,6 @@
 import os
 import pandas as pd
-from connection import get_db_connection
+from app.DB.connection import get_db_connection
 from psycopg2.extras import execute_values
 
 def import_calls(file_path, cursor):
