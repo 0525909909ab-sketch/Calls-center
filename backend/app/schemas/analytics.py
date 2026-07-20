@@ -9,4 +9,4 @@ class DashboardDataResponse(BaseModel):
     actual_volume: Optional[int] = None
     required_agents: int
     assigned_agents: int
-    lebel :str
+    label :str
