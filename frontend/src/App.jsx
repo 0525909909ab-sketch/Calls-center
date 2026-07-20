@@ -2,10 +2,8 @@
 import React from 'react';
 import { createBrowserRouter, RouterProvider, Link, Outlet } from 'react-router-dom';
 import DashboardPage from './pages/DashboardPage';
-import { SchedulePage } from './pages/SchedulePage';
 import { EmployeePage } from './pages/EmployeePage'; 
 
-// Light-themed navigation bar
 const Layout = () => (
   <div>
     <nav style={{
@@ -19,9 +17,6 @@ const Layout = () => (
     }}>
       <Link to="/" style={{ color: '#007bff', textDecoration: 'none', fontWeight: 'bold' }}>
         📊 Manager Dashboard
-      </Link>
-      <Link to="/schedule" style={{ color: '#007bff', textDecoration: 'none', fontWeight: 'bold' }}>
-        📅 Shift Schedule
       </Link>
       <Link to="/employee" style={{ color: '#007bff', textDecoration: 'none', fontWeight: 'bold' }}>
         🎧 Agent Portal
@@ -37,7 +32,6 @@ const router = createBrowserRouter([
     element: <Layout />,
     children: [
       { path: '/', element: <DashboardPage /> },
-      { path: '/schedule', element: <SchedulePage /> },
       { path: '/employee', element: <EmployeePage /> },
     ]
   },

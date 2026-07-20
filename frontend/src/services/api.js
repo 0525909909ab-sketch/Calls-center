@@ -66,3 +66,22 @@ export const fetchScheduledCalls = async (employeeId) => {
     return [];
   }
 };
+
+// 6. הרצת מנוע שיבוץ אוטומטי (POST /api/auto-schedule)
+export const runAutoScheduler = async (date) => {
+  // אם לא הועבר תאריך, נשתמש בתאריך של היום בפורמט YYYY-MM-DD
+  const targetDate = date || new Date().toISOString().split('T')[0];
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/auto-schedule`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date: targetDate }),
+    });
+    if (!response.ok) throw new Error("Auto-scheduler failed");
+    return await response.json();
+  } catch (error) {
+    console.error("Auto-scheduler API error:", error);
+    return null;
+  }
+};

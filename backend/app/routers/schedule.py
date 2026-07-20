@@ -2,11 +2,18 @@ from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel
 from app.DB.connection import get_db
 
+# 1. ייבוא פונקציית השיבוץ האוטומטי מתוך ה-services
+from app.services.auto_scheduler import auto_schedule_workforce
+
 router = APIRouter(prefix="/api", tags=["Shift Schedule & Operations"])
 
 class ToggleAssignmentRequest(BaseModel):
     time_block: str  # בפורמט ISO או תאריך ושעה מלאים, למשל "2026-07-20T08:00:00"
     employee_id: int
+
+# מודל חדש עבור בקשת שיבוץ אוטומטי
+class AutoScheduleRequest(BaseModel):
+    date: str  # בפורמט "YYYY-MM-DD"
 
 @router.get("/workforce-data")
 async def get_workforce_data(db = Depends(get_db)):
@@ -37,7 +44,8 @@ async def get_workforce_data(db = Depends(get_db)):
             
             schedule = [
                 {
-                    "time_block": r[0].strftime("%H:%M"),
+                    "timestamp": r[0].isoformat() if hasattr(r[0], 'isoformat') else str(r[0]),
+                    "time_block": r[0].strftime("%H:%M") if hasattr(r[0], 'strftime') else str(r[0]),
                     "predicted_volume": r[1],
                     "avg_duration_sec": r[2],
                     "assigned": r[3]
@@ -82,3 +90,16 @@ async def toggle_assignment(request: ToggleAssignmentRequest, db = Depends(get_d
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Toggle assignment failed: {str(e)}")
+
+# 🔥 ה-Endpoint החדש עבור כפתור ה-Auto-Schedule
+@router.post("/auto-schedule")
+async def run_auto_scheduler(request: AutoScheduleRequest):
+    try:
+        # קריאה למנוע השיבוץ שרץ על החוקים והאילוצים
+        result = auto_schedule_workforce(request.date)
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Auto-scheduler failed: {str(e)}"
+        )
