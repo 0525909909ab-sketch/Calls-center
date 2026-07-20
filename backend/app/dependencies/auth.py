@@ -1,11 +1,17 @@
 from fastapi import HTTPException, status, Request, Depends
-import jwt
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jose import JWTError, jwt
+from app.core.config import settings
 
-SECRET_KEY = "super_secret_key_change_me"
-ALGORITHM = "HS256"
+security = HTTPBearer(auto_error=False)
 
-def get_current_user_role(request: Request) -> str:
-    token = request.cookies.get("access_token")
+def get_current_user_role(request: Request, credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
+    token = None
+    if credentials:
+        token = credentials.credentials
+    else:
+        token = request.cookies.get("access_token")
+
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -13,7 +19,7 @@ def get_current_user_role(request: Request) -> str:
         )
     
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         role = payload.get("role")
         if not role:
             raise HTTPException(
@@ -21,7 +27,7 @@ def get_current_user_role(request: Request) -> str:
                 detail="Invalid token payload: role missing"
             )
         return role
-    except jwt.PyJWTError:
+    except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token"
