@@ -1,0 +1,2767 @@
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\core\config.py
+```
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+class Settings(BaseSettings):
+    DATABASE_URL: str
+    SECRET_KEY: str
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+settings = Settings()
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\core\security.py
+```
+from datetime import datetime, timedelta, timezone
+from jose import JWTError, jwt
+import bcrypt
+from app.core.config import settings
+
+def hash_password(password: str) -> str:
+    pwd_bytes = password.encode('utf-8')
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(pwd_bytes, salt)
+    return hashed.decode('utf-8')
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+
+def create_access_token(data: dict) -> str:
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\core\__init__.py
+```
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\DB\connection.py
+```
+import os
+import psycopg2
+from dotenv import load_dotenv
+
+# Load environment variables from the .env file
+load_dotenv()
+
+def get_db_connection():
+    """
+    Creates and returns a connection to the Neon / PostgreSQL database.
+    """
+    database_url = os.getenv("DATABASE_URL")
+    
+    if not database_url:
+        raise ValueError("Error: The DATABASE_URL environment variable is not defined! Please set it in the .env file.")
+        
+    try:
+        conn = psycopg2.connect(database_url)
+        return conn
+    except Exception as e:
+        print(f"Error creating connection: {e}")
+        raise e
+
+# 👇 Add this function below 👇
+def get_db():
+    """
+    Dependency for FastAPI.
+    Opens a connection at the start of the request and automatically closes it upon completion.
+    """
+    conn = get_db_connection()
+    try:
+        yield conn
+    finally:
+        conn.close()
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\DB\import_excel.py
+```
+import os
+import pandas as pd
+from app.DB.connection import get_db_connection
+from psycopg2.extras import execute_values
+
+def import_calls(file_path, cursor):
+    print("1. Processing Call Forecasts...")
+    df = pd.read_excel(file_path)
+    
+    # Replace NaN values with None for SQL compatibility
+    df = df.where(pd.notnull(df), None)
+    
+    data = [
+        (row['timestamp'], row['hybrid_pred'], 180, row['actual'])
+        for _, row in df.iterrows()
+    ]
+    
+    query = """
+        INSERT INTO hourly_call_forecast 
+        (timestamp, predicted_volume, average_call_duration, actual_volume)
+        VALUES %s
+        ON CONFLICT (timestamp) 
+        DO UPDATE SET 
+            predicted_volume = EXCLUDED.predicted_volume,
+            actual_volume = EXCLUDED.actual_volume;
+    """
+    execute_values(cursor, query, data)
+    print(f"🎉 Successfully imported {len(data)} call forecast rows.")
+
+def import_employees(file_path, cursor):
+    print("2. Processing Employees...")
+    df = pd.read_excel(file_path)
+    
+    # Replace NaN values with None for SQL compatibility
+    df = df.where(pd.notnull(df), None)
+    
+    data = [
+        (
+            row['name'], row['role'], row['available_from'], row['available_to'],
+            row['max_hours_per_day'], row['max_hours_per_week'], row['max_hours_per_month']
+        )
+        for _, row in df.iterrows()
+    ]
+
+    
+    insert_query = """
+        INSERT INTO employees 
+        (name, role, available_from, available_to, max_hours_per_day, max_hours_per_week, max_hours_per_month)
+        VALUES %s;
+    """
+    execute_values(cursor, insert_query, data)
+    print(f"🎉 Successfully imported {len(data)} employee profiles.")
+
+if __name__ == "__main__":
+    # Ensure these files are placed inside your backend folder
+    CALLS_FILE = "calls_data.xlsx"
+    EMPLOYEES_FILE = "employees_data.xlsx"
+    
+    if not os.path.exists(CALLS_FILE) or not os.path.exists(EMPLOYEES_FILE):
+        print("❌ Error: Please ensure both 'calls_data.xlsx' and 'employees_data.xlsx' exist in the backend folder.")
+    else:
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            import_calls(CALLS_FILE, cursor)
+            import_employees(EMPLOYEES_FILE, cursor)
+            
+            conn.commit()
+            print("\n🚀 All data successfully uploaded to Neon Cloud!")
+            
+            cursor.close()
+            conn.close()
+        except Exception as e:
+            print(f"❌ Database import failed: {e}")
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\DB\test_db.py
+```
+from connection import get_db_connection
+
+try:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # A simple test query that returns the Neon PostgreSQL version
+    cursor.execute("SELECT version();")
+    db_version = cursor.fetchone()
+    
+    print("🎉 Connection to Neon successful!")
+    print(f"Cloud database version: {db_version[0]}")
+    
+    cursor.close()
+    conn.close()
+except Exception as e:
+    print(f"❌ Connection failed: {e}")
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\DB\__init__.py
+```
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\dependencies\admin.py
+```
+from fastapi import APIRouter, Depends
+from app.dependencies.auth import verify_admin
+
+router = APIRouter(prefix="/api/admin")
+
+@router.get("/dashboard")
+def get_admin_dashboard(role: str = Depends(verify_admin)):
+    return {"status": "success", "data": "Welcome to the admin panel"}
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\dependencies\auth.py
+```
+from fastapi import HTTPException, status, Request, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jose import JWTError, jwt
+from app.core.config import settings
+
+security = HTTPBearer(auto_error=False)
+
+def get_current_user_role(request: Request, credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
+    token = None
+    if credentials:
+        token = credentials.credentials
+    else:
+        token = request.cookies.get("access_token")
+
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authentication token"
+        )
+    
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        role = payload.get("role")
+        if not role:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token payload: role missing"
+            )
+        return role
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
+
+def verify_admin(role: str = Depends(get_current_user_role)):
+    if role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Admin privileges required"
+        )
+    return role
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\dependencies\__init__.py
+```
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\routers\analytics.py
+```
+from fastapi import APIRouter, UploadFile, File, HTTPException, Query
+import pandas as pd
+from typing import List
+from datetime import datetime, timedelta
+import math
+from app.schemas.analytics import DashboardDataResponse
+from app.DB.connection import get_db_connection
+from psycopg2.extras import execute_values
+
+# 🔥 שינוי: הורדת ה-prefix כדי לאפשר נתיבים מגוונים
+router = APIRouter(tags=["Analytics & Import"])
+
+# 1. התאמה מדויקת לנתיב המבוקש ע"י הפרונטנד
+@router.post("/upload-predictions/")
+async def upload_predictions(file: UploadFile = File(...)):
+    try:
+        df = pd.read_excel(file.file)
+        df = df.where(pd.notnull(df), None)
+                 
+        data = [
+            (row['timestamp'], row['hybrid_pred'], 180, row['actual'])
+            for _, row in df.iterrows()
+        ]
+                 
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cursor:
+                query = """
+                    INSERT INTO hourly_call_forecast 
+                    (timestamp, predicted_volume, average_call_duration, actual_volume)
+                    VALUES %s
+                    ON CONFLICT (timestamp) 
+                    DO UPDATE SET 
+                        predicted_volume = EXCLUDED.predicted_volume,
+                        actual_volume = EXCLUDED.actual_volume;
+                """
+                execute_values(cursor, query, data)
+            conn.commit()
+        finally:
+            conn.close()
+                     
+        return {"status": "success", "message": f"Successfully imported {len(data)} rows."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+# 2. התאמה מדויקת לנתיב המבוקש ע"י הפרונטנד
+@router.get("/api/dashboard", response_model=List[DashboardDataResponse])
+async def get_admin_dashboard(
+    timeframe: str = Query("daily", pattern="^(daily|weekly|monthly)$"),
+    date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
+):
+    try:
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cursor:
+                base_date = datetime.strptime(date, "%Y-%m-%d").date()
+                
+                # ==========================================
+                # 1. תצוגה יומית (רזולוציה שעתית)
+                # ==========================================
+                if timeframe == "daily":
+                    end_date = base_date + timedelta(days=1)
+                    query = """
+                        SELECT 
+                            f.timestamp, 
+                            f.predicted_volume, 
+                            f.average_call_duration, 
+                            f.actual_volume,
+                            COALESCE(COUNT(s.id), 0) as assigned_agents
+                        FROM hourly_call_forecast f
+                        LEFT JOIN employee_schedule s ON f.timestamp = s.timestamp
+                        WHERE f.timestamp >= %s AND f.timestamp < %s
+                        GROUP BY f.timestamp, f.predicted_volume, f.average_call_duration, f.actual_volume
+                        ORDER BY f.timestamp ASC;
+                    """
+                    cursor.execute(query, (base_date, end_date))
+                    rows = cursor.fetchall()
+                    
+                    result = []
+                    for row in rows:
+                        ts = row[0]
+                        predicted = row[1]
+                        avg_duration = row[2]
+                        total_work_seconds = predicted * avg_duration
+                        required_agents = max(1, math.ceil(total_work_seconds / 3600.0))
+                        
+                        result.append(
+                            DashboardDataResponse(
+                                timestamp=ts,
+                                predicted_volume=predicted,
+                                average_call_duration=avg_duration,
+                                actual_volume=row[3],
+                                required_agents=required_agents,
+                                assigned_agents=row[4],
+                                label=ts.strftime("%H:%M")  
+                            )
+                        )
+                    return result
+                    
+                # ==========================================
+                # 2. תצוגה שבועית (רזולוציה יומית)
+                # ==========================================
+                elif timeframe == "weekly":
+                    end_date = base_date + timedelta(weeks=1)
+                    query = """
+                        SELECT 
+                            DATE(f.timestamp) as day_date, 
+                            SUM(f.predicted_volume) as predicted_volume, 
+                            MAX(f.average_call_duration) as average_call_duration, 
+                            SUM(f.actual_volume) as actual_volume,
+                            COALESCE(COUNT(s.id), 0) as assigned_agents
+                        FROM hourly_call_forecast f
+                        LEFT JOIN employee_schedule s ON f.timestamp = s.timestamp
+                        WHERE f.timestamp >= %s AND f.timestamp < %s
+                        GROUP BY DATE(f.timestamp)
+                        ORDER BY day_date ASC;
+                    """
+                    cursor.execute(query, (base_date, end_date))
+                    rows = cursor.fetchall()
+                    
+                    result = []
+                    for row in rows:
+                        day_date = row[0]
+                        ts = datetime.combine(day_date, datetime.min.time()) 
+                        predicted = int(row[1]) if row[1] else 0
+                        avg_duration = int(row[2]) if row[2] else 180
+                        actual = int(row[3]) if row[3] else 0
+                        
+                        total_work_seconds = predicted * avg_duration
+                        required_agents = max(1, math.ceil(total_work_seconds / 3600.0))
+                        
+                        result.append(
+                            DashboardDataResponse(
+                                timestamp=ts,
+                                predicted_volume=predicted,
+                                average_call_duration=avg_duration,
+                                actual_volume=actual,
+                                required_agents=required_agents,
+                                assigned_agents=row[4],
+                                label=ts.strftime("%A, %d/%m")
+                            )
+                        )
+                    return result
+
+                # ==========================================
+                # 3. תצוגה חודשית (רזולוציה שבועית!)
+                # ==========================================
+                elif timeframe == "monthly":
+                    end_date = base_date + timedelta(days=30)
+                    query = """
+                        SELECT 
+                            DATE_TRUNC('week', f.timestamp)::DATE as week_start, 
+                            SUM(f.predicted_volume) as predicted_volume, 
+                            MAX(f.average_call_duration) as average_call_duration, 
+                            SUM(f.actual_volume) as actual_volume,
+                            COALESCE(COUNT(s.id), 0) as assigned_agents
+                        FROM hourly_call_forecast f
+                        LEFT JOIN employee_schedule s ON f.timestamp = s.timestamp
+                        WHERE f.timestamp >= %s AND f.timestamp < %s
+                        GROUP BY DATE_TRUNC('week', f.timestamp)
+                        ORDER BY week_start ASC;
+                    """
+                    cursor.execute(query, (base_date, end_date))
+                    rows = cursor.fetchall()
+                    
+                    result = []
+                    for row in rows:
+                        week_start = row[0]
+                        ts = datetime.combine(week_start, datetime.min.time()) 
+                        predicted = int(row[1]) if row[1] else 0
+                        avg_duration = int(row[2]) if row[2] else 180
+                        actual = int(row[3]) if row[3] else 0
+                        
+                        total_work_seconds = predicted * avg_duration
+                        required_agents = max(1, math.ceil(total_work_seconds / 3600.0))
+                        
+                        result.append(
+                            DashboardDataResponse(
+                                timestamp=ts,
+                                predicted_volume=predicted,
+                                average_call_duration=avg_duration,
+                                actual_volume=actual,
+                                required_agents=required_agents,
+                                assigned_agents=row[4],
+                                label=f"Week {ts.strftime('%d/%m')}" # כיתוב שמראה את תחילת השבוע
+                            )
+                        )
+                    return result
+
+        finally:
+            conn.close()
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Dashboard fetch failed: {str(e)}")
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\routers\customer_call.py
+```
+from fastapi import APIRouter, HTTPException, status, Query
+from typing import List, Optional
+from pydantic import BaseModel
+from datetime import datetime
+from app.DB.connection import get_db_connection
+
+router = APIRouter(prefix="/api/employee/calls", tags=["Employee Future Calls"])
+
+# מודל גמיש לקבלת הבקשה מהפרונטאנד
+class FlexibleCallRequest(BaseModel):
+    employee_id: Optional[int] = 1
+    customer_name: str
+    scheduled_time: str
+    estimated_duration_minutes: Optional[int] = 15
+
+# 1. POST: הוספת שיחה עתידית
+@router.post("", status_code=status.HTTP_201_CREATED)
+async def create_future_call(request: FlexibleCallRequest):
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            # בדיקת employee_id תקין בטבלת employees
+            cursor.execute("SELECT id FROM employees ORDER BY id ASC LIMIT 1;")
+            emp = cursor.fetchone()
+            emp_id = emp[0] if emp else 1
+
+            # המרה בטוחה של מחרוזת התאריך לאובייקט datetime עבור PostgreSQL
+            try:
+                clean_time = datetime.fromisoformat(request.scheduled_time.replace("Z", ""))
+            except Exception:
+                clean_time = datetime.now()
+
+            # הוספה לטבלה customer_scheduled_calls
+            insert_query = """
+                INSERT INTO customer_scheduled_calls 
+                (employee_id, customer_name, scheduled_time, duration_minutes)
+                VALUES (%s, %s, %s, %s)
+                RETURNING id;
+            """
+            cursor.execute(insert_query, (
+                emp_id,
+                request.customer_name,
+                clean_time,
+                request.estimated_duration_minutes
+            ))
+            
+        conn.commit()
+        return {"status": "success", "message": "Call successfully scheduled"}
+
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        print(f"❌ Error inserting call: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save call in database: {str(e)}"
+        )
+    finally:
+        if conn:
+            conn.close()
+
+
+# 2. GET: שליפת השיחות
+@router.get("")
+async def get_employee_future_calls(employee_id: int = Query(1, gt=0)):
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            query = """
+                SELECT id, employee_id, customer_name, scheduled_time, duration_minutes, created_at
+                FROM customer_scheduled_calls
+                ORDER BY scheduled_time ASC;
+            """
+            cursor.execute(query)
+            rows = cursor.fetchall()
+
+            return [
+                {
+                    "id": r[0],
+                    "employee_id": r[1],
+                    "customer_name": r[2],
+                    "scheduled_time": r[3].isoformat() if hasattr(r[3], 'isoformat') else str(r[3]),
+                    "estimated_duration_minutes": r[4],
+                    "created_at": r[5].isoformat() if hasattr(r[5], 'isoformat') else str(r[5]),
+                    "status": "Scheduled"
+                } for r in rows
+            ]
+    except Exception as e:
+        print(f"❌ Error reading calls: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\routers\employee.py
+```
+# app/routers/employee.py
+from fastapi import APIRouter, HTTPException, status, Depends
+from app.DB.connection import get_db
+# ייבוא המודלים מהמיקום החדש שלהם בסכמות
+from app.schemas.employee import EmployeeCreateRequest, BulkDayOffRequest 
+
+# הגדרת הראוטר - המשתנה ש-main.py מחפש ומצפה לו!
+router = APIRouter(prefix="/api/employees", tags=["Employees Management"])
+
+# 1. POST: יצירת עובד חדש
+@router.post("", status_code=status.HTTP_201_CREATED)
+async def create_employee(request: EmployeeCreateRequest, db = Depends(get_db)):
+    try:
+        with db.cursor() as cursor:
+            insert_query = """
+                INSERT INTO employees 
+                (name, role, available_from, available_to, max_hours_per_day, max_hours_per_week, max_hours_per_month)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id;
+            """
+            cursor.execute(insert_query, (
+                request.name,
+                request.role,
+                request.available_from,
+                request.available_to,
+                request.max_hours_per_day,
+                request.max_hours_per_week,
+                request.max_hours_per_month
+            ))
+            db.commit()
+            employee_id = cursor.fetchone()[0]
+            
+        return {"status": "success", "message": "Employee created successfully", "id": employee_id}
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error: {str(e)}"
+        )
+
+# 2. POST: הגשת בקשת חופש מרוכזת (Bulk Days Off)
+@router.post("/days-off", status_code=status.HTTP_201_CREATED)
+async def add_bulk_days_off(request: BulkDayOffRequest, db = Depends(get_db)):
+    try:
+        with db.cursor() as cursor:
+            # הכנת השאילתה להכנסת ימי חופש לטבלה המתאימה
+            insert_query = """
+                INSERT INTO employee_day_off (employee_id, blocked_date, reason)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (employee_id, blocked_date) DO NOTHING;
+            """
+            # רצים על כל התאריכים שהתקבלו ברשימה מה-Frontend
+            for date_str in request.blocked_dates:
+                cursor.execute(insert_query, (
+                    request.employee_id,
+                    date_str,
+                    request.reason
+                ))
+            db.commit()
+            
+        return {"status": "success", "message": f"Successfully registered {len(request.blocked_dates)} days off"}
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error: {str(e)}"
+        )
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\routers\schedule.py
+```
+from fastapi import APIRouter, HTTPException, status, Depends
+from pydantic import BaseModel
+from app.DB.connection import get_db
+
+# 1. ייבוא פונקציית השיבוץ האוטומטי מתוך ה-services
+from app.services.auto_scheduler import auto_schedule_workforce
+
+router = APIRouter(prefix="/api", tags=["Shift Schedule & Operations"])
+
+class ToggleAssignmentRequest(BaseModel):
+    time_block: str  # בפורמט ISO או תאריך ושעה מלאים, למשל "2026-07-20T08:00:00"
+    employee_id: int
+
+# מודל חדש עבור בקשת שיבוץ אוטומטי
+class AutoScheduleRequest(BaseModel):
+    date: str  # בפורמט "YYYY-MM-DD"
+
+@router.get("/workforce-data")
+async def get_workforce_data(db = Depends(get_db)):
+    try:
+        with db.cursor() as cursor:
+            # 1. שליפת כל העובדים כולל מגבלת רצף השעות להפסקות
+            cursor.execute("SELECT id, name, role, max_hours_per_day, max_consecutive_hours FROM employees;")
+            emp_rows = cursor.fetchall()
+            employees = [
+                {
+                    "id": r[0], 
+                    "name": r[1], 
+                    "role": r[2], 
+                    "max_hours_per_day": r[3],
+                    "max_consecutive_hours": r[4] if r[4] else 4  # ברירת מחדל של 4 שעות רצופות אם חסר
+                }
+                for r in emp_rows
+            ]
+
+            # 2. שליפת נפח השיחות יחד עם רשימת המאוישים (employee_ids) לכל בלוק
+            query = """
+                SELECT 
+                    f.timestamp, 
+                    f.predicted_volume, 
+                    f.average_call_duration,
+                    COALESCE(ARRAY_AGG(s.employee_id) FILTER (WHERE s.employee_id IS NOT NULL), '{}') as assigned
+                FROM hourly_call_forecast f
+                LEFT JOIN employee_schedule s ON f.timestamp = s.timestamp
+                GROUP BY f.timestamp, f.predicted_volume, f.average_call_duration
+                ORDER BY f.timestamp ASC;
+            """
+            cursor.execute(query)
+            sched_rows = cursor.fetchall()
+            
+            schedule = [
+                {
+                    "timestamp": r[0].isoformat(),         # הוסף כדי שמנוע האזהרות יעבוד מושלם
+                    "time_block": r[0].strftime("%H:%M"),
+                    "predicted_volume": r[1],
+                    "avg_duration_sec": r[2],
+                    "assigned": r[3]
+                }
+                for r in sched_rows
+            ]
+
+        return {"employees": employees, "schedule": schedule}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch workforce data: {str(e)}")
+
+@router.post("/toggle-assignment")
+async def toggle_assignment(request: ToggleAssignmentRequest, db = Depends(get_db)):
+    try:
+        with db.cursor() as cursor:
+            # בדיקה האם האיוש כבר קיים
+            check_query = """
+                SELECT id FROM employee_schedule 
+                WHERE timestamp = %s AND employee_id = %s;
+            """
+            cursor.execute(check_query, (request.time_block, request.employee_id))
+            existing = cursor.fetchone()
+
+            if existing:
+                # Toggle Off: אם קיים, נמחק
+                delete_query = "DELETE FROM employee_schedule WHERE id = %s;"
+                cursor.execute(delete_query, (existing[0],))
+                message = "Assignment removed"
+            else:
+                # Toggle On: אם לא קיים, נוסיף
+                insert_query = """
+                    INSERT INTO employee_schedule (employee_id, timestamp) 
+                    VALUES (%s, %s);
+                """
+                cursor.execute(insert_query, (request.employee_id, request.time_block))
+                message = "Assignment added"
+                
+            db.commit()
+        return {"status": "success", "message": message}
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Toggle assignment failed: {str(e)}")
+
+# 🔥 ה-Endpoint החדש עבור כפתור ה-Auto-Schedule
+@router.post("/auto-schedule")
+async def run_auto_scheduler(request: AutoScheduleRequest):
+    try:
+        # קריאה למנוע השיבוץ שרץ על החוקים והאילוצים
+        result = auto_schedule_workforce(request.date)
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Auto-scheduler failed: {str(e)}"
+        )
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\routers\__init__.py
+```
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\schemas\analytics.py
+```
+from pydantic import BaseModel
+from datetime import datetime
+from typing import Optional
+
+class DashboardDataResponse(BaseModel):
+    timestamp: datetime
+    predicted_volume: int
+    average_call_duration: int
+    actual_volume: Optional[int] = None
+    required_agents: int
+    assigned_agents: int
+    label :str
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\schemas\customer_call.py
+```
+# app/schemas/customer_call.py
+from pydantic import BaseModel, Field
+from datetime import datetime
+
+class CustomerCallCreateRequest(BaseModel):
+    employee_id: int = Field(..., gt=0, description="Employee ID")
+    customer_name: str = Field(..., min_length=2, max_length=100, description="Customer name")
+    scheduled_time: datetime = Field(..., description="Scheduled call time in ISO format")
+    estimated_duration_minutes: int = Field(..., ge=1, le=120, description="Estimated call duration in minutes (1 to 120 minutes)")
+
+class CustomerCallResponse(BaseModel):
+    id: int
+    employee_id: int
+    customer_name: str
+    scheduled_time: datetime
+    estimated_duration_minutes: int
+    created_at: datetime
+    status: str = "Scheduled"
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\schemas\employee.py
+```
+# app/schemas/employee.py
+from pydantic import BaseModel, Field, field_validator
+from typing import List, Optional
+import re
+
+# 1. Model for submitting weekly/future days off (Bulk)
+class BulkDayOffRequest(BaseModel):
+    employee_id: int = Field(..., gt=0, description="Unique identifier of the employee in the database")
+    blocked_dates: List[str] = Field(..., description="List of dates in YYYY-MM-DD format")
+    reason: Optional[str] = Field(None, max_length=255, description="Reason for the day off")
+
+    @field_validator('blocked_dates')
+    @classmethod
+    def validate_date_format(cls, v: List[str]) -> List[str]:
+        date_regex = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+        for date_str in v:
+            if not date_regex.match(date_str):
+                raise ValueError(f"The date '{date_str}' must be in a strict YYYY-MM-DD format")
+        return v
+
+# 2. Model for creating a new employee in the system
+class EmployeeCreateRequest(BaseModel):
+    name: str = Field(..., min_length=2, max_length=100, description="Full name of the employee")
+    role: str = Field(..., description="Role: e.g., 'Manager' or 'Agent'")
+    available_from: str = Field(..., description="Availability start time in HH:MM:SS format")
+    available_to: str = Field(..., description="Availability end time in HH:MM:SS format")
+    max_hours_per_day: int = Field(8, ge=1, le=24)
+    max_hours_per_week: int = Field(40, ge=1, le=168)
+    max_hours_per_month: int = Field(180, ge=1, le=744)
+
+    @field_validator('available_from', 'available_to')
+    @classmethod
+    def validate_time_format(cls, v: str) -> str:
+        time_regex = re.compile(r'^\d{2}:\d{2}:\d{2}$')
+        if not time_regex.match(v):
+            raise ValueError("The time must be in an HH:MM:SS format")
+        return v
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\schemas\__init__.py
+```
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\services\auto_scheduler.py
+```
+from app.DB.connection import get_db_connection
+from app.services.metrics import calculate_required_agents
+
+def auto_schedule_workforce(date_str: str) -> dict:
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            # 1. שליפת כל העובדים הפעילים
+            cursor.execute("SELECT id, name, role, max_hours_per_day FROM employees;")
+            emp_rows = cursor.fetchall()
+            if not emp_rows:
+                return {"status": "success", "agents_scheduled": 0, "message": "No employees found"}
+                
+            employees = [
+                {"id": r[0], "name": r[1], "role": r[2], "max_hours_per_day": r[3] or 8}
+                for r in emp_rows
+            ]
+
+            # 2. שליפת התחזית והמשמרות הקיימות לתאריך המבוקש
+            forecast_query = """
+                SELECT 
+                    f.timestamp,
+                    f.predicted_volume,
+                    f.average_call_duration,
+                    COALESCE(ARRAY_AGG(s.employee_id) FILTER (WHERE s.employee_id IS NOT NULL), '{}') as assigned
+                FROM hourly_call_forecast f
+                LEFT JOIN employee_schedule s ON f.timestamp = s.timestamp
+                WHERE f.timestamp::date = %s::date
+                GROUP BY f.timestamp, f.predicted_volume, f.average_call_duration
+                ORDER BY f.timestamp ASC;
+            """
+            cursor.execute(forecast_query, (date_str,))
+            schedule_rows = cursor.fetchall()
+
+            scheduled_count = 0
+            
+            # מעקב אחר שעות עבודה יומיות לכל עובד כדי לא לעבור את המגבלה היומית
+            emp_daily_hours = {emp["id"]: 0 for emp in employees}
+
+            # 3. אלגוריתם השיבוץ
+            for row in schedule_rows:
+                slot_timestamp = row[0]
+                predicted_volume = row[1]
+                avg_duration = row[2] or 900
+                assigned_list = list(row[3]) if row[3] else []
+
+                # עדכון השעות שכבר שובצו
+                for emp_id in assigned_list:
+                    if emp_id in emp_daily_hours:
+                        emp_daily_hours[emp_id] += 1
+
+                req_agents = calculate_required_agents(predicted_volume, avg_duration)
+                needed = req_agents - len(assigned_list)
+
+                if needed > 0:
+                    for emp in employees:
+                        if needed == 0:
+                            break
+
+                        # דילוג אם העובד כבר משובץ בשעה הזו
+                        if emp["id"] in assigned_list:
+                            continue
+
+                        # בדיקה אם העובד הגיע למכסת השעות היומית שלו
+                        if emp_daily_hours[emp["id"]] >= emp["max_hours_per_day"]:
+                            continue
+
+                        # שיבוץ העובד למשמרת
+                        insert_query = """
+                            INSERT INTO employee_schedule (employee_id, timestamp)
+                            VALUES (%s, %s)
+                            ON CONFLICT (employee_id, timestamp) DO NOTHING;
+                        """
+                        cursor.execute(insert_query, (emp["id"], slot_timestamp))
+                        
+                        scheduled_count += 1
+                        needed -= 1
+                        assigned_list.append(emp["id"])
+                        emp_daily_hours[emp["id"]] += 1
+
+            conn.commit()
+            return {"status": "success", "agents_scheduled": scheduled_count}
+
+    except Exception as e:
+        conn.rollback()
+        print(f"❌ Auto-scheduler engine error: {e}")
+        raise e
+    finally:
+        conn.close()
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\services\constraints.py
+```
+from app.DB.connection import get_db_connection
+
+def check_employee_constraints(employee_id: int, date_str: str) -> dict:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    limit_query = """
+        SELECT max_hours_per_day, max_hours_per_week, max_hours_per_month
+        FROM employees
+        WHERE id = %s;
+    """
+    cursor.execute(limit_query, (employee_id,))
+    limits = cursor.fetchone()
+    
+    if not limits:
+        cursor.close()
+        conn.close()
+        return {"allowed": False, "reason": "Employee not found"}
+        
+    max_day, max_week, max_month = limits
+    
+    day_query = """
+        SELECT COUNT(*) 
+        FROM employee_schedule
+        WHERE employee_id = %s AND timestamp::date = %s::date;
+    """
+    cursor.execute(day_query, (employee_id, date_str))
+    current_day_hours = cursor.fetchone()[0]
+    
+    week_query = """
+        SELECT COUNT(*) 
+        FROM employee_schedule
+        WHERE employee_id = %s 
+          AND DATE_TRUNC('week', timestamp) = DATE_TRUNC('week', %s::date);
+    """
+    cursor.execute(week_query, (employee_id, date_str))
+    current_week_hours = cursor.fetchone()[0]
+    
+    month_query = """
+        SELECT COUNT(*) 
+        FROM employee_schedule
+        WHERE employee_id = %s 
+          AND EXTRACT(YEAR FROM timestamp) = EXTRACT(YEAR FROM %s::date)
+          AND EXTRACT(MONTH FROM timestamp) = EXTRACT(MONTH FROM %s::date);
+    """
+    cursor.execute(month_query, (employee_id, date_str))
+    current_month_hours = cursor.fetchone()[0]
+    
+    cursor.close()
+    conn.close()
+    
+    if max_day and current_day_hours >= max_day:
+        return {"allowed": False, "reason": "Daily hour limit exceeded"}
+        
+    if max_week and current_week_hours >= max_week:
+        return {"allowed": False, "reason": "Weekly hour limit exceeded"}
+        
+    if max_month and current_month_hours >= max_month:
+        return {"allowed": False, "reason": "Monthly hour limit exceeded"}
+        
+    return {"allowed": True, "reason": "All constraints satisfied"}
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\services\excel_processor.py
+```
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\services\forecast.py
+```
+from app.DB.connection import get_db_connection
+
+def fetch_filtered_forecast(timeframe: str, date_str: str):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    if timeframe == "daily":
+        query = """
+            SELECT 
+                timestamp::text as timestamp,
+                predicted_volume,
+                average_call_duration,
+                TO_CHAR(timestamp, 'HH24:MI') as label
+            FROM hourly_call_forecast
+            WHERE timestamp::date = %s
+            ORDER BY timestamp ASC;
+        """
+        cursor.execute(query, (date_str,))
+    elif timeframe == "weekly":
+        query = """
+            SELECT 
+                timestamp::text as timestamp,
+                predicted_volume,
+                average_call_duration,
+                TO_CHAR(timestamp, 'MM-DD HH24:MI') as label
+            FROM hourly_call_forecast
+            WHERE timestamp::date BETWEEN %s AND %s::date + INTERVAL '7 days'
+            ORDER BY timestamp ASC;
+        """
+        cursor.execute(query, (date_str, date_str))
+    elif timeframe == "monthly":
+        query = """
+            SELECT 
+                timestamp::text as timestamp,
+                predicted_volume,
+                average_call_duration,
+                TO_CHAR(timestamp, 'MM-DD') as label
+            FROM hourly_call_forecast
+            WHERE EXTRACT(YEAR FROM timestamp) = EXTRACT(YEAR FROM %s::date)
+              AND EXTRACT(MONTH FROM timestamp) = EXTRACT(MONTH FROM %s::date)
+            ORDER BY timestamp ASC;
+        """
+        cursor.execute(query, (date_str, date_str))
+    else:
+        query = """
+            SELECT 
+                timestamp::text as timestamp,
+                predicted_volume,
+                average_call_duration,
+                TO_CHAR(timestamp, 'HH24:MI') as label
+            FROM hourly_call_forecast
+            ORDER BY timestamp ASC;
+        """
+        cursor.execute(query)
+    records = cursor.fetchall()
+    formatted_results = []
+    for row in records:
+        formatted_results.append({
+            "timestamp": row[0],
+            "predicted_volume": row[1],
+            "average_call_duration": row[2],
+            "label": row[3]
+        })
+    cursor.close()
+    conn.close()
+    return formatted_results
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\services\metrics.py
+```
+import math
+
+def calculate_required_agents(predicted_volume: int, avg_duration_sec: int) -> int:
+    raw_required = (predicted_volume * avg_duration_sec) / 3600
+    rounded_agents = math.ceil(raw_required)
+    return max(1, rounded_agents)
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\services\scheduler.py
+```
+from app.DB.connection import get_db_connection
+
+def get_full_workforce_data(date_str: str):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    emp_query = """
+        SELECT id, name, role, max_hours_per_day 
+        FROM employees;
+    """
+    cursor.execute(emp_query)
+    emp_records = cursor.fetchall()
+    
+    employees_list = []
+    for emp in emp_records:
+        employees_list.append({
+            "id": emp[0],
+            "name": emp[1],
+            "role": emp[2],
+            "max_hours_per_day": emp[3]
+        })
+        
+    forecast_query = """
+        SELECT 
+            timestamp,
+            predicted_volume,
+            average_call_duration,
+            TO_CHAR(timestamp, 'HH24:MI') as label
+        FROM hourly_call_forecast
+        WHERE timestamp::date = %s
+        ORDER BY timestamp ASC;
+    """
+    cursor.execute(forecast_query, (date_str,))
+    forecast_records = cursor.fetchall()
+    
+    schedule_list = []
+    for row in forecast_records:
+        slot_timestamp = row[0]
+        predicted_volume = row[1]
+        avg_duration_sec = row[2]
+        time_label = row[3]
+        
+        assigned_query = """
+            SELECT employee_id 
+            FROM employee_schedule 
+            WHERE timestamp = %s;
+        """
+        cursor.execute(assigned_query, (slot_timestamp,))
+        assigned_records = cursor.fetchall()
+        
+        assigned_ids = []
+        for ass in assigned_records:
+            assigned_ids.append(ass[0])
+            
+        schedule_list.append({
+            "timestamp": slot_timestamp,
+            "time_block": time_label,
+            "predicted_volume": predicted_volume,
+            "avg_duration_sec": avg_duration_sec,
+            "assigned": assigned_ids
+        })
+        
+    cursor.close()
+    conn.close()
+    
+    return {
+        "employees": employees_list,
+        "schedule": schedule_list
+    }
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\services\__init__.py
+```
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\main.py
+```
+# app/main.py
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from app.routers.employee import router as employee_router
+from app.routers.analytics import router as analytics_router  
+from app.routers.customer_call import router as calls_router
+from app.routers.schedule import router as schedule_router
+import uvicorn
+
+
+app = FastAPI(title="Workforce Management API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(employee_router)
+app.include_router(analytics_router)
+app.include_router(calls_router)
+app.include_router(schedule_router) 
+
+@app.get("/")
+async def root():
+    return {"status": "online", "message": "Welcome to the Workforce Management Engine"}
+
+
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)    
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\backend\app\__init__.py
+```
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\frontend\src\components\CoverageWarnings.jsx
+```
+import React from 'react';
+
+export const CoverageWarnings = ({ warnings = [] }) => {
+  if (warnings.length === 0) {
+    return (
+      <div style={{ padding: '16px', backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981', borderRadius: '8px', border: '1px solid #10b981', direction: 'ltr', textAlign: 'left' }}>
+        ✅ <strong>Schedule Status OK:</strong> No coverage issues or employee hour limits exceeded in the current schedule.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', direction: 'ltr', textAlign: 'left', fontFamily: 'sans-serif' }}>
+      <h3 style={{ margin: '0 0 4px 0', color: '#f43f5e', fontSize: '18px' }}>🚨 Operational Alerts & Coverage Risks:</h3>
+      
+      {warnings.map((warning) => (
+        <div 
+          key={warning.id} 
+          style={{
+            padding: '14px 16px',
+            backgroundColor: '#1e293b',
+            borderLeft: `5px solid ${warning.severity === 'high' ? '#f43f5e' : '#f59e0b'}`,
+            borderRadius: '8px',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+          }}
+        >
+          <strong style={{ display: 'block', color: warning.severity === 'high' ? '#f43f5e' : '#f59e0b', marginBottom: '4px', fontSize: '15px' }}>
+            {warning.title}
+          </strong>
+          <p style={{ fontSize: '14px', color: '#94a3b8', margin: '0 0 6px 0' }}>
+            {warning.description}
+          </p>
+          
+          {warning.reason && (
+            <div style={{ marginTop: '8px', padding: '6px 10px', backgroundColor: 'rgba(244, 63, 94, 0.1)', border: '1px dashed rgba(244, 63, 94, 0.3)', borderRadius: '4px', fontSize: '13px', color: '#fda4af' }}>
+              💡 <strong>System Analysis:</strong> {warning.reason}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+};
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\frontend\src\components\CustomerCallForm.jsx
+```
+// src/components/CustomerCallForm.jsx
+import React, { useState } from 'react';
+
+export const CustomerCallForm = ({ onAddCall }) => {
+  const [customerName, setCustomerName] = useState('');
+  const [scheduledTime, setScheduledTime] = useState('');
+  const [estimatedDuration, setEstimatedDuration] = useState('15');
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!customerName || !scheduledTime) {
+      alert('Please fill in both customer name and scheduled time.');
+      return;
+    }
+
+    // המרה לפורמט ISO מלא (YYYY-MM-DDTHH:mm:ss.sssZ) כדי ש-FastAPI יבין את התאריך בצורה חלק
+    const formattedDate = new Date(scheduledTime).toISOString();
+
+    const newCall = {
+      id: Date.now(),
+      customer_name: customerName,
+      scheduled_time: formattedDate,
+      estimated_duration_minutes: parseInt(estimatedDuration, 10),
+      status: 'Scheduled'
+    };
+
+    onAddCall(newCall);
+
+    // Reset Form
+    setCustomerName('');
+    setScheduledTime('');
+    setEstimatedDuration('15');
+  };
+
+  return (
+    <div style={{
+      backgroundColor: '#ffffff',
+      padding: '24px',
+      borderRadius: '8px',
+      border: '1px solid #e2e8f0',
+      boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+      marginBottom: '25px',
+      fontFamily: 'Arial, sans-serif'
+    }}>
+      <h3 style={{ margin: '0 0 15px 0', color: '#1e293b', fontSize: '18px' }}>
+        📞 Log Upcoming Customer Call
+      </h3>
+      <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '20px' }}>
+        Report scheduled calls with customers so workload forecasting can adjust accordingly.
+      </p>
+
+      <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', alignItems: 'end' }}>
+        <div>
+          <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', color: '#475569', marginBottom: '6px' }}>
+            Customer Name
+          </label>
+          <input
+            type="text"
+            placeholder="e.g. David Levi"
+            value={customerName}
+            onChange={(e) => setCustomerName(e.target.value)}
+            style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
+          />
+        </div>
+
+        <div>
+          <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', color: '#475569', marginBottom: '6px' }}>
+            Scheduled Date & Time
+          </label>
+          <input
+            type="datetime-local"
+            value={scheduledTime}
+            onChange={(e) => setScheduledTime(e.target.value)}
+            style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
+          />
+        </div>
+
+        <div>
+          <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', color: '#475569', marginBottom: '6px' }}>
+            Est. Duration (Minutes)
+          </label>
+          <select
+            value={estimatedDuration}
+            onChange={(e) => setEstimatedDuration(e.target.value)}
+            style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
+          >
+            <option value="5">5 Minutes</option>
+            <option value="10">10 Minutes</option>
+            <option value="15">15 Minutes</option>
+            <option value="30">30 Minutes</option>
+            <option value="45">45 Minutes</option>
+            <option value="60">60 Minutes</option>
+          </select>
+        </div>
+
+        <div>
+          <button
+            type="submit"
+            style={{
+              width: '100%',
+              padding: '11px',
+              backgroundColor: '#007bff',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '6px',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              transition: 'background-color 0.2s'
+            }}
+          >
+            ➕ Schedule Call
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
+export default CustomerCallForm;
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\frontend\src\components\DashboardFilters.jsx
+```
+import React from 'react';
+
+const DashboardFilters = ({ timeframe, setTimeframe, selectedDate, setSelectedDate }) => {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '8px' }}>
+      
+      {/* Timeframe Toggle Buttons (Daily, Weekly, Monthly) */}
+      <div style={{ display: 'flex', gap: '10px' }}>
+        {['daily', 'weekly', 'monthly'].map((type) => (
+          <button
+            key={type}
+            onClick={() => setTimeframe(type)}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '6px',
+              border: '1px solid #ccc',
+              cursor: 'pointer',
+              backgroundColor: timeframe === type ? '#007bff' : '#fff',
+              color: timeframe === type ? '#fff' : '#333',
+              fontWeight: timeframe === type ? 'bold' : 'normal',
+              textTransform: 'capitalize'
+            }}
+          >
+            {type === 'daily' ? 'Daily' : type === 'weekly' ? 'Weekly' : 'Monthly'}
+          </button>
+        ))}
+      </div>
+
+      {/* Date Picker */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <label htmlFor="date-picker" style={{ fontWeight: 'bold' }}>Select Date:</label>
+        <input
+          id="date-picker"
+          type="date"
+          value={selectedDate}
+          onChange={(e) => setSelectedDate(e.target.value)}
+          style={{ padding: '6px 12px', borderRadius: '4px', border: '1px solid #ccc' }}
+        />
+      </div>
+
+    </div>
+  );
+};
+
+export default DashboardFilters;
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\frontend\src\components\DemandChart.jsx
+```
+import React from 'react';
+
+const calculateRequiredStaff = (volume, duration) => {
+  if (!volume || !duration) return 0;
+  return Math.ceil(volume / (3600 / duration));
+};
+
+const DemandChart = ({ data, timeframe, employees = [], onToggleEmployee }) => {
+  return (
+    <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', marginBottom: '25px' }}>
+      <h3 style={{ marginBottom: '15px', color: '#1a252f', textAlign: 'left' }}>
+        Workload & Staffing Planning ({timeframe === 'daily' ? 'Hourly' : timeframe === 'weekly' ? 'Daily' : 'Weekly'})
+      </h3>
+
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'center', fontFamily: 'Arial, sans-serif' }}>
+          <thead>
+            <tr style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #dee2e6', color: '#495057' }}>
+              <th style={{ padding: '12px' }}>Hour / Slot</th>
+              <th style={{ padding: '12px' }}>Expected Calls</th>
+              <th style={{ padding: '12px' }}>Required Staff</th>
+              <th style={{ padding: '12px' }}>Assigned Staff</th>
+              <th style={{ padding: '12px' }}>Quick Shift Assignment</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.map((item, index) => {
+              const required = item.required_agents || calculateRequiredStaff(item.predicted_volume, item.average_call_duration || 900);
+              const assignedList = item.assigned || [];
+              const assignedCount = item.assigned_agents !== undefined ? item.assigned_agents : assignedList.length;
+
+              return (
+                <tr key={index} style={{ borderBottom: '1px solid #e9ecef', backgroundColor: index % 2 === 0 ? '#ffffff' : '#fcfcfc' }}>
+                  <td style={{ padding: '12px', fontWeight: 'bold' }}>{item.label || item.timestamp}</td>
+                  <td style={{ padding: '12px' }}>{item.predicted_volume} calls</td>
+                  <td style={{ padding: '12px', fontWeight: 'bold', color: '#007bff' }}>{required}</td>
+                  <td style={{ padding: '12px', fontWeight: 'bold', color: '#28a745' }}>{assignedCount}</td>
+                  <td style={{ padding: '12px' }}>
+                    <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                      {employees.map(emp => {
+                        const isAssigned = assignedList.includes(emp.id);
+                        return (
+                          <button
+                            key={emp.id}
+                            onClick={() => onToggleEmployee && onToggleEmployee(item.timestamp, emp.id)}
+                            style={{
+                              padding: '4px 10px',
+                              fontSize: '12px',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              border: isAssigned ? '1px solid #16a34a' : '1px solid #cbd5e1',
+                              backgroundColor: isAssigned ? '#dcfce7' : '#ffffff',
+                              color: isAssigned ? '#15803d' : '#64748b',
+                              fontWeight: 'bold',
+                            }}
+                          >
+                            {emp.name} {emp.role === 'Manager' ? '👑' : '🎧'}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+export default DemandChart;
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\frontend\src\components\EditShiftModal.jsx
+```
+import React from "react";
+
+export const EditShiftModal = ({ isOpen, onClose, timeBlock, employees, assignedEmployees, onToggleEmployee }) => {
+  if (!isOpen) return null;
+
+  const formatTimeDisplay = (isoString) => {
+    try {
+      if (isoString && isoString.includes("T")) {
+        return new Date(isoString).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
+      }
+      return isoString;
+    } catch (e) {
+      return isoString;
+    }
+  };
+
+  return (
+    <div style={{
+      position: "fixed",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: "rgba(15, 23, 42, 0.75)",
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "center",
+      zIndex: 1000,
+      backdropFilter: "blur(4px)"
+    }}>
+      <div style={{
+        backgroundColor: "#1e293b",
+        padding: "24px",
+        borderRadius: "12px",
+        width: "100%",
+        maxWidth: "450px",
+        border: "1px solid rgba(255, 255, 255, 0.1)",
+        boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.3)"
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+          <h3 style={{ color: "#38bdf8", margin: 0, fontSize: "1.25rem", fontWeight: "bold" }}>
+            🛠️ Edit Shift Assignments
+          </h3>
+          <span style={{ color: "#94a3b8", fontSize: "14px", fontWeight: "bold" }}>
+            Slot: {formatTimeDisplay(timeBlock)}
+          </span>
+        </div>
+
+        <p style={{ color: "#94a3b8", fontSize: "14px", marginBottom: "20px", lineHeight: "1.5" }}>
+          Select or deselect employees to close coverage gaps for this hourly period.
+        </p>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "10px", maxHeight: "250px", overflowY: "auto", marginBottom: "24px", paddingRight: "4px" }}>
+          {employees.map(emp => {
+            const isAssigned = assignedEmployees.includes(emp.id);
+            return (
+              <div 
+                key={emp.id}
+                onClick={() => onToggleEmployee(timeBlock, emp.id)}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "12px",
+                  borderRadius: "8px",
+                  backgroundColor: isAssigned ? "rgba(16, 185, 129, 0.1)" : "#1e293b",
+                  border: isAssigned ? "1px solid #10b981" : "1px solid rgba(255, 255, 255, 0.05)",
+                  cursor: "pointer",
+                  transition: "all 0.15s ease"
+                }}
+              >
+                <span style={{ color: isAssigned ? "#10b981" : "#f8fafc", fontWeight: "bold", fontSize: "14px" }}>
+                  {emp.name} <span style={{ fontSize: "12px", color: "#64748b", fontWeight: "normal" }}>({emp.role})</span>
+                </span>
+                <span style={{ color: isAssigned ? "#10b981" : "#64748b", fontWeight: "bold" }}>
+                  {isAssigned ? "Active ✔" : "Off Duty +"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        <button
+          onClick={onClose}
+          style={{
+            width: "100%",
+            padding: "10px",
+            backgroundColor: "#ef4444",
+            color: "#ffffff",
+            border: "none",
+            borderRadius: "6px",
+            fontWeight: "bold",
+            cursor: "pointer",
+            transition: "background-color 0.2s"
+          }}
+        >
+          Close & Save Changes
+        </button>
+      </div>
+    </div>
+  );
+};
+
+export default EditShiftModal;
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\frontend\src\components\KpiCards.jsx
+```
+import React from 'react';
+
+const KpiCards = ({ totalCalls, totalDurationHours, requiredStaff, assignedStaff }) => {
+  // Calculate coverage percentage
+  const coveragePercent = requiredStaff > 0 ? Math.round((assignedStaff / requiredStaff) * 100) : 100;
+  
+  // Color coding for coverage indicator
+  const isUnderstaffed = coveragePercent < 100;
+
+  const cardStyle = {
+    flex: '1',
+    padding: '20px',
+    borderRadius: '8px',
+    backgroundColor: '#ffffff',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+    borderLeft: '4px solid #007bff',
+    textAlign: 'left'
+  };
+
+  return (
+    <div style={{ display: 'flex', gap: '20px', marginBottom: '25px' }}>
+      
+      {/* Total Predicted Calls */}
+      <div style={cardStyle}>
+        <span style={{ fontSize: '14px', color: '#6c757d' }}>Total Predicted Calls</span>
+        <h2 style={{ margin: '10px 0 0 0', fontSize: '28px', color: '#212529' }}>{totalCalls}</h2>
+      </div>
+
+      {/* Total Call Duration (Hours) */}
+      <div style={{ ...cardStyle, borderLeftColor: '#17a2b8' }}>
+        <span style={{ fontSize: '14px', color: '#6c757d' }}>Est. Call Duration</span>
+        <h2 style={{ margin: '10px 0 0 0', fontSize: '28px', color: '#212529' }}>{totalDurationHours} hrs</h2>
+      </div>
+
+      {/* Staff Required vs Assigned */}
+      <div style={{ ...cardStyle, borderLeftColor: '#ffc107' }}>
+        <span style={{ fontSize: '14px', color: '#6c757d' }}>Assigned / Required Staff</span>
+        <h2 style={{ margin: '10px 0 0 0', fontSize: '28px', color: '#212529' }}>
+          {assignedStaff} / {requiredStaff}
+        </h2>
+      </div>
+
+      {/* Coverage Percentage Indicator */}
+      <div style={{ ...cardStyle, borderLeftColor: isUnderstaffed ? '#dc3545' : '#28a745' }}>
+        <span style={{ fontSize: '14px', color: '#6c757d' }}>Staffing Coverage</span>
+        <h2 style={{ margin: '10px 0 0 0', fontSize: '28px', color: isUnderstaffed ? '#dc3545' : '#28a745' }}>
+          {coveragePercent}%
+        </h2>
+      </div>
+
+    </div>
+  );
+};
+
+export default KpiCards;
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\frontend\src\components\ManagerExcelActions.jsx
+```
+import React, { useState } from "react";
+import { generateExcelFromSchedule } from "../utils/excelExportUtils";
+
+export const ManagerExcelActions = ({ onUploadSuccess, scheduleData, employees }) => {
+  const [uploading, setUploading] = useState(false);
+
+  const handleFileChange = async (e) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      setUploading(true);
+
+      const response = await fetch("http://localhost:8000/upload-predictions/", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (response.ok) {
+        alert("🎉 Custom forecast file uploaded and processed by Pandas successfully!");
+        if (onUploadSuccess) {
+          onUploadSuccess();
+        }
+      } else {
+        alert("❌ File upload failed. Ensure the file is valid and FastAPI server is running.");
+      }
+    } catch (error) {
+      console.error("Error uploading file to Python backend:", error);
+      alert("❌ API Connection failed. The backend server is currently offline.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleExportClick = () => {
+    const isSuccess = generateExcelFromSchedule(scheduleData, employees);
+    if (!isSuccess) {
+      alert("❌ No shift schedule data available on screen to export at the moment.");
+    }
+  };
+
+  return (
+    <div style={{
+      backgroundColor: "#ffffff",
+      padding: "20px 24px",
+      borderRadius: "8px",
+      border: "1px solid #e2e8f0",
+      boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
+      textAlign: "center",
+      fontFamily: "Arial, sans-serif"
+    }}>
+      <h4 style={{ margin: "0 0 8px 0", color: "#1e293b", fontSize: "1.1rem", fontWeight: "bold" }}>
+        📁 Manual Forecast CSV Upload & Schedule Export
+      </h4>
+      <p style={{ color: "#64748b", fontSize: "14px", marginBottom: "16px", maxWidth: "550px", margin: "0 auto 16px auto", lineHeight: "1.4" }}>
+        If an employee forgot to log a call, the manager can upload an updated CSV file here to insert it directly into PostgreSQL, or export the current shift schedule back to Excel.
+      </p>
+
+      <div style={{ display: "flex", gap: "16px", justifyContent: "center", alignItems: "center" }}>
+        <label style={{
+          display: "inline-block",
+          padding: "10px 20px",
+          backgroundColor: uploading ? "#cbd5e1" : "#007bff",
+          color: uploading ? "#475569" : "#ffffff",
+          borderRadius: "6px",
+          fontWeight: "bold",
+          fontSize: "14px",
+          cursor: uploading ? "not-allowed" : "pointer",
+          transition: "all 0.2s ease"
+        }}>
+          {uploading ? "⏳ Analyzing file..." : "📥 Select CSV File to Upload Live"}
+          <input 
+            type="file" 
+            accept=".csv" 
+            onChange={handleFileChange} 
+            style={{ display: "none" }} 
+            disabled={uploading} 
+          />
+        </label>
+
+        <button
+          onClick={handleExportClick}
+          type="button"
+          style={{
+            display: "inline-block",
+            padding: "10px 20px",
+            backgroundColor: "#10b981",
+            color: "#ffffff",
+            border: "none",
+            borderRadius: "6px",
+            fontWeight: "bold",
+            fontSize: "14px",
+            cursor: "pointer",
+            transition: "all 0.2s ease"
+          }}
+        >
+          📝 Generate Excel From Schedule
+        </button>
+      </div>
+    </div>
+  );
+};
+
+export default ManagerExcelActions;
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\frontend\src\components\MyScheduledCalls.jsx
+```
+// src/components/MyScheduledCalls.jsx
+import React from 'react';
+
+export const MyScheduledCalls = ({ calls = [] }) => {
+  return (
+    <div style={{
+      backgroundColor: '#ffffff',
+      padding: '24px',
+      borderRadius: '8px',
+      border: '1px solid #e2e8f0',
+      boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+      fontFamily: 'Arial, sans-serif'
+    }}>
+      <h3 style={{ margin: '0 0 15px 0', color: '#1e293b', fontSize: '18px' }}>
+        📋 My Scheduled Calls ({calls.length})
+      </h3>
+
+      {calls.length === 0 ? (
+        <p style={{ color: '#94a3b8', fontStyle: 'italic', margin: 0 }}>
+          No upcoming customer calls scheduled yet.
+        </p>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+            <thead>
+              <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #e2e8f0', color: '#475569' }}>
+                <th style={{ padding: '12px' }}>Customer Name</th>
+                <th style={{ padding: '12px' }}>Scheduled Date & Time</th>
+                <th style={{ padding: '12px' }}>Duration</th>
+                <th style={{ padding: '12px' }}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {calls.map((call) => (
+                <tr key={call.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '12px', fontWeight: 'bold', color: '#1e293b' }}>
+                    {call.customer_name}
+                  </td>
+                  <td style={{ padding: '12px', color: '#334155' }}>
+                    {new Date(call.scheduled_time).toLocaleString('en-US', {
+                      dateStyle: 'medium',
+                      timeStyle: 'short'
+                    })}
+                  </td>
+                  <td style={{ padding: '12px', color: '#334155' }}>
+                    {call.estimated_duration_minutes} mins
+                  </td>
+                  <td style={{ padding: '12px' }}>
+                    <span style={{
+                      padding: '4px 10px',
+                      borderRadius: '12px',
+                      fontSize: '12px',
+                      fontWeight: 'bold',
+                      backgroundColor: '#e0f2fe',
+                      color: '#0369a1'
+                    }}>
+                      {call.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default MyScheduledCalls;
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\frontend\src\pages\DashboardPage.jsx
+```
+// src/pages/DashboardPage.jsx
+import React, { useState, useEffect } from 'react';
+import DashboardFilters from '../components/DashboardFilters';
+import KpiCards from '../components/KpiCards';
+import DemandChart from '../components/DemandChart';
+import { fetchDashboardData, fetchWorkforceData, runAutoScheduler, toggleEmployeeAssignment } from '../services/api';
+
+import { ManagerExcelActions } from '../components/ManagerExcelActions';
+import { CoverageWarnings } from '../components/CoverageWarnings';
+
+const DashboardPage = () => {
+  const [timeframe, setTimeframe] = useState('daily');
+  const [selectedDate, setSelectedDate] = useState('2026-07-20');
+  const [dashboardData, setDashboardData] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [scheduling, setScheduling] = useState(false);
+
+  const loadAllData = async () => {
+    setLoading(true);
+    const [dashData, workforce] = await Promise.all([
+      fetchDashboardData(timeframe, selectedDate),
+      fetchWorkforceData()
+    ]);
+    setDashboardData(dashData || []);
+    setEmployees(workforce.employees || []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    loadAllData();
+  }, [timeframe, selectedDate]);
+
+  // 🪄 הרצת מנוע השיבוץ האוטומטי בלחיצת כפתור
+  const handleAutoSchedule = async () => {
+    setScheduling(true);
+    const res = await runAutoScheduler(selectedDate);
+    setScheduling(false);
+
+    if (res && res.status === 'success') {
+      alert(`🎉 Auto-Scheduler finished! Scheduled ${res.agents_scheduled} agent shifts.`);
+      loadAllData(); // טעינה מחדש של הלו"ז המעודכן
+    } else {
+      alert("❌ Auto-scheduling failed or server offline.");
+    }
+  };
+
+  const handleToggleEmployee = async (timeBlock, employeeId) => {
+    const success = await toggleEmployeeAssignment(timeBlock, employeeId);
+    if (success) {
+      loadAllData();
+    }
+  };
+
+  const totalCalls = dashboardData.reduce((acc, item) => acc + (item.predicted_volume || 0), 0);
+  const totalDurationHours = Math.round(
+    dashboardData.reduce((acc, item) => acc + ((item.predicted_volume || 0) * (item.average_call_duration || 900)), 0) / 3600
+  );
+  
+  const requiredStaff = dashboardData.reduce((acc, item) => acc + (item.required_agents || 0), 0);
+  const assignedStaff = dashboardData.reduce((acc, item) => acc + (item.assigned_agents || 0), 0);
+
+  return (
+    <div style={{ padding: '30px', fontFamily: 'Arial, sans-serif', direction: 'ltr', backgroundColor: '#f8f9fa', color: '#333', minHeight: '100vh' }}>
+      
+      {/* Title + Magic Wand Auto-Schedule Button */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', borderBottom: '2px solid #e9ecef', paddingBottom: '15px' }}>
+        <h1 style={{ margin: 0, color: '#2c3e50', fontSize: '26px' }}>
+          Manager Control Center 
+          <span style={{ color: '#6c757d', fontSize: '18px', marginLeft: '10px', fontWeight: 'normal' }}>
+            | Workload & Auto-Scheduling Engine
+          </span>
+        </h1>
+
+        {/* 🪄 הכפתור שמנצח את ההאקתון */}
+        <button
+          onClick={handleAutoSchedule}
+          disabled={scheduling}
+          style={{
+            padding: '12px 24px',
+            backgroundColor: scheduling ? '#94a3b8' : '#8b5cf6',
+            color: '#ffffff',
+            border: 'none',
+            borderRadius: '8px',
+            fontWeight: 'bold',
+            fontSize: '15px',
+            cursor: scheduling ? 'not-allowed' : 'pointer',
+            boxShadow: '0 4px 6px rgba(139, 92, 246, 0.25)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            transition: 'all 0.2s ease'
+          }}
+        >
+          {scheduling ? '⏳ Running AI Engine...' : '🪄 Auto-Schedule Workforce'}
+        </button>
+      </div>
+
+      {/* 1. Live Excel Actions */}
+      <div style={{ marginBottom: '25px' }}>
+        <ManagerExcelActions onUploadSuccess={loadAllData} scheduleData={dashboardData} employees={employees} />
+      </div>
+      
+      {/* 2. Filters */}
+      <DashboardFilters 
+        timeframe={timeframe} 
+        setTimeframe={setTimeframe} 
+        selectedDate={selectedDate} 
+        setSelectedDate={setSelectedDate} 
+      />
+
+      {loading ? (
+        <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>⏳ Loading live control center...</div>
+      ) : (
+        <>
+          {/* 3. KPI Cards */}
+          <KpiCards 
+            totalCalls={totalCalls} 
+            totalDurationHours={totalDurationHours} 
+            requiredStaff={requiredStaff} 
+            assignedStaff={assignedStaff} 
+          />
+
+          {/* 4. Demand Chart with Quick Employee Assignment */}
+          <DemandChart 
+            data={dashboardData} 
+            timeframe={timeframe} 
+            employees={employees}
+            onToggleEmployee={handleToggleEmployee}
+          />
+        </>
+      )}
+
+      {/* 5. Coverage Warnings */}
+      <div style={{ marginTop: '25px' }}>
+        <CoverageWarnings scheduleData={dashboardData} employees={employees} />
+      </div>
+
+    </div>
+  );
+};
+
+export default DashboardPage;
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\frontend\src\pages\EmployeePage.jsx
+```
+// src/pages/EmployeePage.jsx
+import React, { useState, useEffect } from 'react';
+import CustomerCallForm from '../components/CustomerCallForm';
+import MyScheduledCalls from '../components/MyScheduledCalls';
+import { createScheduledCall, fetchScheduledCalls } from '../services/api';
+
+export const EmployeePage = () => {
+  const [scheduledCalls, setScheduledCalls] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const currentEmployeeId = 1; // Example logged in agent
+
+  const loadCalls = async () => {
+    setLoading(true);
+    const data = await fetchScheduledCalls(currentEmployeeId);
+    setScheduledCalls(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    loadCalls();
+  }, []);
+
+  const handleAddCall = async (newCall) => {
+    const payload = {
+      employee_id: currentEmployeeId,
+      customer_name: newCall.customer_name,
+      scheduled_time: newCall.scheduled_time,
+      estimated_duration_minutes: newCall.estimated_duration_minutes
+    };
+
+    const success = await createScheduledCall(payload);
+    if (success) {
+      loadCalls();
+    } else {
+      alert("❌ Failed to save call in database.");
+    }
+  };
+
+  return (
+    <div style={{ padding: '30px', fontFamily: 'Arial, sans-serif', direction: 'ltr', backgroundColor: '#f8f9fa', color: '#333', minHeight: '100vh' }}>
+      
+      {/* Title */}
+      <div style={{ marginBottom: '25px', borderBottom: '2px solid #e9ecef', paddingBottom: '10px' }}>
+        <h1 style={{ margin: 0, color: '#2c3e50', fontSize: '26px' }}>
+          Agent Portal 
+          <span style={{ color: '#6c757d', fontSize: '20px', marginLeft: '10px', fontWeight: 'normal' }}>
+            | Customer Call Logging & Schedule
+          </span>
+        </h1>
+      </div>
+
+      {/* 1. Call Form */}
+      <CustomerCallForm onAddCall={handleAddCall} />
+
+      {/* 2. Scheduled Calls Table */}
+      {loading ? (
+        <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>⏳ Loading agent calls...</div>
+      ) : (
+        <MyScheduledCalls calls={scheduledCalls} />
+      )}
+
+    </div>
+  );
+};
+
+export default EmployeePage;
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\frontend\src\services\api.js
+```
+// src/services/api.js
+const API_BASE_URL = "http://127.0.0.1:8000";
+
+// 1. שליפת נתוני דשבורד מנהל (GET /api/dashboard)
+export const fetchDashboardData = async (timeframe = 'daily', date = '2026-07-20') => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/dashboard?timeframe=${timeframe}&date=${date}`);
+    if (!response.ok) throw new Error("Failed to fetch dashboard data");
+    return await response.json();
+  } catch (error) {
+    console.error("Dashboard API error:", error);
+    return [];
+  }
+};
+
+// 2. שליפת נתוני עובדים ומשמרות (GET /api/workforce-data)
+export const fetchWorkforceData = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/workforce-data`);
+    if (!response.ok) throw new Error("Failed to fetch workforce data");
+    return await response.json();
+  } catch (error) {
+    console.error("Workforce API error:", error);
+    return { employees: [], schedule: [] };
+  }
+};
+
+// 3. עדכון שיבוץ עובד במשמרת (POST /api/toggle-assignment)
+export const toggleEmployeeAssignment = async (timeBlock, employeeId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/toggle-assignment`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ time_block: timeBlock, employee_id: employeeId }),
+    });
+    return response.ok;
+  } catch (error) {
+    console.error("Toggle assignment API error:", error);
+    return false;
+  }
+};
+
+// 4. שמירת שיחה עתידית מהעובד (POST /api/employee/calls)
+export const createScheduledCall = async (callData) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/employee/calls`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(callData),
+    });
+    return response.ok;
+  } catch (error) {
+    console.error("Create call API error:", error);
+    return false;
+  }
+};
+
+// 5. שליפת רשימת שיחות של עובד (GET /api/employee/calls?employee_id=X)
+export const fetchScheduledCalls = async (employeeId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/employee/calls?employee_id=${employeeId}`);
+    if (!response.ok) throw new Error("Failed to fetch employee calls");
+    return await response.json();
+  } catch (error) {
+    console.error("Employee calls API error:", error);
+    return [];
+  }
+};
+
+// 6. הרצת מנוע שיבוץ אוטומטי (POST /api/auto-schedule)
+export const runAutoScheduler = async (date) => {
+  // אם לא הועבר תאריך, נשתמש בתאריך של היום בפורמט YYYY-MM-DD
+  const targetDate = date || new Date().toISOString().split('T')[0];
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/auto-schedule`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date: targetDate }),
+    });
+    if (!response.ok) throw new Error("Auto-scheduler failed");
+    return await response.json();
+  } catch (error) {
+    console.error("Auto-scheduler API error:", error);
+    return null;
+  }
+};
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\frontend\src\types\index.js
+```
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\frontend\src\utils\excelExportUtils.js
+```
+import * as XLSX from "xlsx";
+
+export const generateExcelFromSchedule = (scheduleData, employees, fileName = "shift_schedule_output.xlsx") => {
+  if (!scheduleData || scheduleData.length === 0) return false;
+
+  const formattedData = scheduleData.map(block => {
+    let timeLabel = block.time_block;
+    try {
+      if (block.time_block && block.time_block.includes("T")) {
+        timeLabel = new Date(block.time_block).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
+      }
+    } catch (e) {
+      timeLabel = block.time_block;
+    }
+
+    const assignedIds = Array.isArray(block.assigned) ? block.assigned : [];
+    
+    const assignedNames = assignedIds
+      .map(id => {
+        const emp = employees ? employees.find(e => e.id === id) : null;
+        return emp ? emp.name : `ID: ${id}`;
+      })
+      .join(", ");
+
+    return {
+      "Time Slot": timeLabel,
+      "Predicted Volume": block.predicted_volume || 0,
+      "Average Duration (Sec)": block.avg_duration_sec || 180,
+      "Assigned Agents Count": assignedIds.length,
+      "Assigned Staff Names": assignedNames
+    };
+  });
+
+  const worksheet = XLSX.utils.json_to_sheet(formattedData);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Shift Schedule");
+  
+  XLSX.writeFile(workbook, fileName);
+  return true;
+};
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\frontend\src\utils\warningsUtils.js
+```
+// src/utils/warningsUtils.js
+
+const calculateRequiredStaff = (volume, duration) => {
+  if (!volume || !duration) return 0;
+  return Math.ceil(volume / (3600 / duration));
+};
+
+export const calculateCoverageWarnings = (scheduleData, employees) => {
+  const warnings = [];
+  const processedTimestamps = new Set();
+  const employeeConsecutiveHours = {};
+
+  // אתחול מונה שעות רצופות (בשביל הפסקות) לכל עובד
+  employees.forEach(emp => {
+    employeeConsecutiveHours[emp.id] = 0;
+  });
+
+  // סידור הלו"ז לפי זמן מבטיח שספירת השעות הרצופות תעבוד נכון כרונולוגית
+  const sortedForecasts = [...scheduleData].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+  sortedForecasts.forEach(forecast => {
+    // מניעת כפילויות במקרה שיש כמה שורות לאותה שעה
+    if (processedTimestamps.has(forecast.timestamp)) return;
+    processedTimestamps.add(forecast.timestamp);
+
+    const hourlyAssignments = sortedForecasts.filter(s => s.timestamp === forecast.timestamp);
+    
+    // תמיכה בשני סוגי המבנים מה-Backend (גם אם זה מערך assigned וגם אם זה employee_id)
+    const assignedIds = forecast.assigned || hourlyAssignments.map(s => s.employee_id).filter(Boolean);
+    const assignedAgentsCount = assignedIds.length > 0 ? assignedIds.length : hourlyAssignments.length;
+
+    const requiredAgents = calculateRequiredStaff(forecast.predicted_volume, 180);
+    const timeString = new Date(forecast.timestamp).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+
+    // ==========================================
+    // 1. הלוגיקה המקורית שלך: תת-איוש (Understaffing)
+    // ==========================================
+    if (assignedAgentsCount < requiredAgents) {
+      const restrictedEmployees = [];
+      
+      employees.forEach(emp => {
+        const isAssignedThisHour = assignedIds.includes(emp.id) || hourlyAssignments.some(s => s.employee_id === emp.id);
+        
+        if (!isAssignedThisHour) {
+          const totalHours = sortedForecasts.filter(s => s.employee_id === emp.id || (s.assigned && s.assigned.includes(emp.id))).length;
+          if (
+            (emp.max_hours_per_day && totalHours >= emp.max_hours_per_day) ||
+            (emp.max_hours_per_week && totalHours >= emp.max_hours_per_week) ||
+            (emp.max_hours_per_month && totalHours >= emp.max_hours_per_month)
+          ) {
+            restrictedEmployees.push(emp.name);
+          }
+        }
+      });
+
+      let reasonMessage = "No other available agents in the database for this specific period.";
+      if (restrictedEmployees.length > 0) {
+        reasonMessage = `Shift gap at ${timeString} due to max-hours limits reached for available agents (${restrictedEmployees.join(', ')}).`;
+      }
+
+      warnings.push({
+        id: `understaffed-${forecast.timestamp}`,
+        type: 'coverage',
+        severity: requiredAgents - assignedAgentsCount >= 2 ? 'high' : 'medium',
+        title: `⚠️ Understaffing Detected at ${timeString}`,
+        description: `Required: ${requiredAgents} agents, Assigned: ${assignedAgentsCount} agents. Shortage of ${requiredAgents - assignedAgentsCount} agent(s).`,
+        reason: reasonMessage
+      });
+    }
+
+    // ==========================================
+    // 2. חוק חדש: חובת נוכחות מנהל משמרת
+    // ==========================================
+    if (assignedAgentsCount > 0) {
+      const hasManager = employees.some(emp => 
+        (assignedIds.includes(emp.id) || hourlyAssignments.some(s => s.employee_id === emp.id)) && 
+        (emp.role === 'Manager' || emp.role === 'מנהל')
+      );
+
+      if (!hasManager) {
+        warnings.push({
+          id: `no-manager-${forecast.timestamp}`,
+          type: 'compliance',
+          severity: 'high',
+          title: `⚠️ No Manager on Duty at ${timeString}`,
+          description: `There are ${assignedAgentsCount} employees scheduled, but no manager is present.`,
+          reason: "Protocol requires at least one manager during active operational hours."
+        });
+      }
+    }
+
+    // ==========================================
+    // 3. חוק חדש: אילוץ הפסקות (רצף שעות עבודה)
+    // ==========================================
+    employees.forEach(emp => {
+      const isAssignedThisHour = assignedIds.includes(emp.id) || hourlyAssignments.some(s => s.employee_id === emp.id);
+
+      if (isAssignedThisHour) {
+        employeeConsecutiveHours[emp.id] += 1;
+        const maxConsecutive = emp.max_consecutive_hours || 4; // ברירת מחדל של 4 שעות רצופות אם לא מוגדר
+
+        if (employeeConsecutiveHours[emp.id] > maxConsecutive) {
+          warnings.push({
+            id: `missed-break-${emp.id}-${forecast.timestamp}`,
+            type: 'limit',
+            severity: 'high',
+            title: `☕ Break Required: ${emp.name}`,
+            description: `Employee is scheduled for more than ${maxConsecutive} consecutive hours and must take a break.`
+          });
+        }
+      } else {
+        // איפוס מונה הרצף אם העובד לא משובץ בשעה זו (קיבל הפסקה)
+        employeeConsecutiveHours[emp.id] = 0;
+      }
+    });
+
+    // ==========================================
+    // 4. הלוגיקה המקורית שלך: חריגת שעות יומיות/שבועיות (Overtime)
+    // ==========================================
+    const assignedEmployeesForOvertime = employees.filter(emp => assignedIds.includes(emp.id) || hourlyAssignments.some(s => s.employee_id === emp.id));
+
+    assignedEmployeesForOvertime.forEach(emp => {
+      const totalHours = sortedForecasts.filter(s => s.employee_id === emp.id || (s.assigned && s.assigned.includes(emp.id))).length;
+
+      if (emp.max_hours_per_day && totalHours > emp.max_hours_per_day) {
+        if (!warnings.some(w => w.id === `overtime-day-${emp.id}`)) {
+          warnings.push({
+            id: `overtime-day-${emp.id}`,
+            type: 'limit',
+            severity: 'high',
+            title: `👑 Daily Hour Limit Exceeded: ${emp.name}`,
+            description: `Employee is assigned to ${totalHours} hours, while the maximum daily limit is ${emp.max_hours_per_day} hours.`
+          });
+        }
+      }
+
+      if (emp.max_hours_per_week && totalHours > emp.max_hours_per_week) {
+        if (!warnings.some(w => w.id === `overtime-week-${emp.id}`)) {
+          warnings.push({
+            id: `overtime-week-${emp.id}`,
+            type: 'limit',
+            severity: 'high',
+            title: `📅 Weekly Hour Limit Exceeded: ${emp.name}`,
+            description: `Employee is assigned to ${totalHours} hours, while the maximum weekly limit is ${emp.max_hours_per_week} hours.`
+          });
+        }
+      }
+
+      if (emp.max_hours_per_month && totalHours > emp.max_hours_per_month) {
+        if (!warnings.some(w => w.id === `overtime-month-${emp.id}`)) {
+          warnings.push({
+            id: `overtime-month-${emp.id}`,
+            type: 'limit',
+            severity: 'high',
+            title: `🗓️ Monthly Hour Limit Exceeded: ${emp.name}`,
+            description: `Employee is assigned to ${totalHours} hours, while the maximum monthly limit is ${emp.max_hours_per_month} hours.`
+          });
+        }
+      }
+    });
+  });
+
+  return warnings;
+};
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\frontend\src\App.css
+```
+.counter {
+  font-size: 16px;
+  padding: 5px 10px;
+  border-radius: 5px;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 2px solid transparent;
+  transition: border-color 0.3s;
+  margin-bottom: 24px;
+
+  &:hover {
+    border-color: var(--accent-border);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+.hero {
+  position: relative;
+
+  .base,
+  .framework,
+  .vite {
+    inset-inline: 0;
+    margin: 0 auto;
+  }
+
+  .base {
+    width: 170px;
+    position: relative;
+    z-index: 0;
+  }
+
+  .framework,
+  .vite {
+    position: absolute;
+  }
+
+  .framework {
+    z-index: 1;
+    top: 34px;
+    height: 28px;
+    transform: perspective(2000px) rotateZ(300deg) rotateX(44deg) rotateY(39deg)
+      scale(1.4);
+  }
+
+  .vite {
+    z-index: 0;
+    top: 107px;
+    height: 26px;
+    width: auto;
+    transform: perspective(2000px) rotateZ(300deg) rotateX(40deg) rotateY(39deg)
+      scale(0.8);
+  }
+}
+
+#center {
+  display: flex;
+  flex-direction: column;
+  gap: 25px;
+  place-content: center;
+  place-items: center;
+  flex-grow: 1;
+
+  @media (max-width: 1024px) {
+    padding: 32px 20px 24px;
+    gap: 18px;
+  }
+}
+
+#next-steps {
+  display: flex;
+  border-top: 1px solid var(--border);
+  text-align: left;
+
+  & > div {
+    flex: 1 1 0;
+    padding: 32px;
+    @media (max-width: 1024px) {
+      padding: 24px 20px;
+    }
+  }
+
+  .icon {
+    margin-bottom: 16px;
+    width: 22px;
+    height: 22px;
+  }
+
+  @media (max-width: 1024px) {
+    flex-direction: column;
+    text-align: center;
+  }
+}
+
+#docs {
+  border-right: 1px solid var(--border);
+
+  @media (max-width: 1024px) {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+#next-steps ul {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  gap: 8px;
+  margin: 32px 0 0;
+
+  .logo {
+    height: 18px;
+  }
+
+  a {
+    color: var(--text-h);
+    font-size: 16px;
+    border-radius: 6px;
+    background: var(--social-bg);
+    display: flex;
+    padding: 6px 12px;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+    transition: box-shadow 0.3s;
+
+    &:hover {
+      box-shadow: var(--shadow);
+    }
+    .button-icon {
+      height: 18px;
+      width: 18px;
+    }
+  }
+
+  @media (max-width: 1024px) {
+    margin-top: 20px;
+    flex-wrap: wrap;
+    justify-content: center;
+
+    li {
+      flex: 1 1 calc(50% - 8px);
+    }
+
+    a {
+      width: 100%;
+      justify-content: center;
+      box-sizing: border-box;
+    }
+  }
+}
+
+#spacer {
+  height: 88px;
+  border-top: 1px solid var(--border);
+  @media (max-width: 1024px) {
+    height: 48px;
+  }
+}
+
+.ticks {
+  position: relative;
+  width: 100%;
+
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    top: -4.5px;
+    border: 5px solid transparent;
+  }
+
+  &::before {
+    left: 0;
+    border-left-color: var(--border);
+  }
+  &::after {
+    right: 0;
+    border-right-color: var(--border);
+  }
+}
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\frontend\src\App.jsx
+```
+// src/App.jsx
+import React from 'react';
+import { createBrowserRouter, RouterProvider, Link, Outlet } from 'react-router-dom';
+import DashboardPage from './pages/DashboardPage';
+import { EmployeePage } from './pages/EmployeePage'; 
+
+const Layout = () => (
+  <div>
+    <nav style={{
+      display: 'flex',
+      gap: '20px',
+      padding: '15px 30px',
+      backgroundColor: '#ffffff',
+      borderBottom: '1px solid #dee2e6',
+      boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+      fontFamily: 'Arial, sans-serif'
+    }}>
+      <Link to="/" style={{ color: '#007bff', textDecoration: 'none', fontWeight: 'bold' }}>
+        📊 Manager Dashboard
+      </Link>
+      <Link to="/employee" style={{ color: '#007bff', textDecoration: 'none', fontWeight: 'bold' }}>
+        🎧 Agent Portal
+      </Link>
+    </nav>
+    <Outlet />
+  </div>
+);
+
+const router = createBrowserRouter([
+  {
+    path: '/',
+    element: <Layout />,
+    children: [
+      { path: '/', element: <DashboardPage /> },
+      { path: '/employee', element: <EmployeePage /> },
+    ]
+  },
+]);
+
+function App() {
+  return <RouterProvider router={router} />;
+}
+
+export default App;
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\frontend\src\index.css
+```
+:root {
+  --text: #6b6375;
+  --text-h: #08060d;
+  --bg: #fff;
+  --border: #e5e4e7;
+  --code-bg: #f4f3ec;
+  --accent: #aa3bff;
+  --accent-bg: rgba(170, 59, 255, 0.1);
+  --accent-border: rgba(170, 59, 255, 0.5);
+  --social-bg: rgba(244, 243, 236, 0.5);
+  --shadow:
+    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+
+  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, Consolas, monospace;
+
+  font: 18px/145% var(--sans);
+  letter-spacing: 0.18px;
+  color-scheme: light dark;
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  @media (max-width: 1024px) {
+    font-size: 16px;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #9ca3af;
+    --text-h: #f3f4f6;
+    --bg: #16171d;
+    --border: #2e303a;
+    --code-bg: #1f2028;
+    --accent: #c084fc;
+    --accent-bg: rgba(192, 132, 252, 0.15);
+    --accent-border: rgba(192, 132, 252, 0.5);
+    --social-bg: rgba(47, 48, 58, 0.5);
+    --shadow:
+      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+  }
+
+  #social .button-icon {
+    filter: invert(1) brightness(2);
+  }
+}
+
+body {
+  margin: 0;
+}
+
+#root {
+  width: 1126px;
+  max-width: 100%;
+  margin: 0 auto;
+  text-align: center;
+  border-inline: 1px solid var(--border);
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+h1,
+h2 {
+  font-family: var(--heading);
+  font-weight: 500;
+  color: var(--text-h);
+}
+
+h1 {
+  font-size: 56px;
+  letter-spacing: -1.68px;
+  margin: 32px 0;
+  @media (max-width: 1024px) {
+    font-size: 36px;
+    margin: 20px 0;
+  }
+}
+h2 {
+  font-size: 24px;
+  line-height: 118%;
+  letter-spacing: -0.24px;
+  margin: 0 0 8px;
+  @media (max-width: 1024px) {
+    font-size: 20px;
+  }
+}
+p {
+  margin: 0;
+}
+
+code,
+.counter {
+  font-family: var(--mono);
+  display: inline-flex;
+  border-radius: 4px;
+  color: var(--text-h);
+}
+
+code {
+  font-size: 15px;
+  line-height: 135%;
+  padding: 4px 8px;
+  background: var(--code-bg);
+}
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\frontend\src\main.jsx
+```
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import './index.css'
+import App from './App.jsx'
+
+createRoot(document.getElementById('root')).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\frontend\eslint.config.js
+```
+import js from '@eslint/js'
+import globals from 'globals'
+import reactHooks from 'eslint-plugin-react-hooks'
+import reactRefresh from 'eslint-plugin-react-refresh'
+import { defineConfig, globalIgnores } from 'eslint/config'
+
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{js,jsx}'],
+    extends: [
+      js.configs.recommended,
+      reactHooks.configs.flat.recommended,
+      reactRefresh.configs.vite,
+    ],
+    languageOptions: {
+      globals: globals.browser,
+      parserOptions: { ecmaFeatures: { jsx: true } },
+    },
+  },
+])
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\frontend\index.html
+```
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>frontend</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+```
+
+### File: C:\Users\salom\OneDrive\����� ������\cyberpro\akaton\Calls-center\frontend\vite.config.js
+```
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [react()],
+})
+```
+

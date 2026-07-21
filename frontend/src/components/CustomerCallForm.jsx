@@ -13,10 +13,13 @@ export const CustomerCallForm = ({ onAddCall }) => {
       return;
     }
 
+    // המרה לפורמט ISO מלא (YYYY-MM-DDTHH:mm:ss.sssZ) כדי ש-FastAPI יבין את התאריך בצורה חלק
+    const formattedDate = new Date(scheduledTime).toISOString();
+
     const newCall = {
       id: Date.now(),
       customer_name: customerName,
-      scheduled_time: scheduledTime,
+      scheduled_time: formattedDate,
       estimated_duration_minutes: parseInt(estimatedDuration, 10),
       status: 'Scheduled'
     };

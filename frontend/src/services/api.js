@@ -46,9 +46,24 @@ export const createScheduledCall = async (callData) => {
     const response = await fetch(`${API_BASE_URL}/api/employee/calls`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(callData),
+      body: JSON.stringify({
+        employee_id: callData.employee_id || 1,
+        customer_name: callData.customer_name || callData.customerName,
+        scheduled_time: callData.scheduled_time || callData.scheduledTime,
+        estimated_duration_minutes: parseInt(
+          callData.estimated_duration_minutes || callData.duration || 15,
+          10
+        ),
+      }),
     });
-    return response.ok;
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Create call server error:", errorText);
+      return false;
+    }
+    
+    return await response.json();
   } catch (error) {
     console.error("Create call API error:", error);
     return false;
@@ -56,7 +71,7 @@ export const createScheduledCall = async (callData) => {
 };
 
 // 5. שליפת רשימת שיחות של עובד (GET /api/employee/calls?employee_id=X)
-export const fetchScheduledCalls = async (employeeId) => {
+export const fetchScheduledCalls = async (employeeId = 1) => {
   try {
     const response = await fetch(`${API_BASE_URL}/api/employee/calls?employee_id=${employeeId}`);
     if (!response.ok) throw new Error("Failed to fetch employee calls");
@@ -69,7 +84,6 @@ export const fetchScheduledCalls = async (employeeId) => {
 
 // 6. הרצת מנוע שיבוץ אוטומטי (POST /api/auto-schedule)
 export const runAutoScheduler = async (date) => {
-  // אם לא הועבר תאריך, נשתמש בתאריך של היום בפורמט YYYY-MM-DD
   const targetDate = date || new Date().toISOString().split('T')[0];
 
   try {
