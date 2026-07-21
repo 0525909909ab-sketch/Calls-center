@@ -1,5 +1,6 @@
 // src/pages/DashboardPage.jsx
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import DashboardFilters from '../components/DashboardFilters';
 import KpiCards from '../components/KpiCards';
 import DemandChart from '../components/DemandChart';
@@ -16,15 +17,35 @@ const DashboardPage = () => {
   const [loading, setLoading] = useState(true);
   const [scheduling, setScheduling] = useState(false);
 
+  const navigate = useNavigate();
+
   const loadAllData = async () => {
+    // בדיקה שהמשתמש מחובר
+    const storedUser = localStorage.getItem('user');
+    if (!storedUser) {
+      navigate('/login');
+      return;
+    }
+
     setLoading(true);
-    const [dashData, workforce] = await Promise.all([
-      fetchDashboardData(timeframe, selectedDate),
-      fetchWorkforceData()
-    ]);
-    setDashboardData(dashData || []);
-    setEmployees(workforce.employees || []);
-    setLoading(false);
+    try {
+      const [dashData, workforce] = await Promise.all([
+        fetchDashboardData(timeframe, selectedDate),
+        fetchWorkforceData()
+      ]);
+
+      setDashboardData(dashData || []);
+      setEmployees(workforce?.employees || []);
+    } catch (error) {
+      console.error("Failed to load dashboard data:", error);
+      // אם התקבלה שגיאת הרשאה (401/403), מנתבים ללוגין
+      if (error.message?.includes("401") || error.message?.includes("Unauthorized")) {
+        localStorage.removeItem('user');
+        navigate('/login');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -41,7 +62,7 @@ const DashboardPage = () => {
       alert(`🎉 Auto-Scheduler finished! Scheduled ${res.agents_scheduled} agent shifts.`);
       loadAllData(); // טעינה מחדש של הלו"ז המעודכן
     } else {
-      alert("❌ Auto-scheduling failed or server offline.");
+      alert("❌ Auto-scheduling failed. Make sure you are logged in as a Manager.");
     }
   };
 

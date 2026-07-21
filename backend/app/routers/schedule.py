@@ -1,8 +1,10 @@
+# app/routers/schedule.py
 from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel
 from app.DB.connection import get_db
-
-# 1. ייבוא פונקציית השיבוץ האוטומטי מתוך ה-services
+from app.utils.auth import require_manager
+from app.services.auto_scheduler import auto_schedule_workforce
+# ייבוא פונקציית השיבוץ האוטומטי מתוך ה-services
 from app.services.auto_scheduler import auto_schedule_workforce
 
 router = APIRouter(prefix="/api", tags=["Shift Schedule & Operations"])
@@ -11,10 +13,10 @@ class ToggleAssignmentRequest(BaseModel):
     time_block: str  # בפורמט ISO או תאריך ושעה מלאים, למשל "2026-07-20T08:00:00"
     employee_id: int
 
-# מודל חדש עבור בקשת שיבוץ אוטומטי
 class AutoScheduleRequest(BaseModel):
-    date: str  # בפורמט "YYYY-MM-DD"
+    date: str  
 
+# 👁️ שליפת הלו"ז - פתוח לקריאה כדי למנוע חסימות 401 בטעינת הממשק
 @router.get("/workforce-data")
 async def get_workforce_data(db = Depends(get_db)):
     try:
@@ -28,7 +30,7 @@ async def get_workforce_data(db = Depends(get_db)):
                     "name": r[1], 
                     "role": r[2], 
                     "max_hours_per_day": r[3],
-                    "max_consecutive_hours": r[4] if r[4] else 4  # ברירת מחדל של 4 שעות רצופות אם חסר
+                    "max_consecutive_hours": r[4] if r[4] else 4  # ברירת מחדל של 4 שעות רצופות
                 }
                 for r in emp_rows
             ]
@@ -50,7 +52,7 @@ async def get_workforce_data(db = Depends(get_db)):
             
             schedule = [
                 {
-                    "timestamp": r[0].isoformat(),         # הוסף כדי שמנוע האזהרות יעבוד מושלם
+                    "timestamp": r[0].isoformat(),         # נדרש עבור מנוע האזהרות ב-React
                     "time_block": r[0].strftime("%H:%M"),
                     "predicted_volume": r[1],
                     "avg_duration_sec": r[2],
@@ -64,11 +66,16 @@ async def get_workforce_data(db = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch workforce data: {str(e)}")
 
-@router.post("/toggle-assignment")
-async def toggle_assignment(request: ToggleAssignmentRequest, db = Depends(get_db)):
+# ✏️ עריכת איוש - מורשה למנהלים בלבד!
+# app/routers/schedule.py
+@router.post("/toggle-assignment", dependencies=[Depends(require_manager)])
+async def toggle_assignment(
+    request: ToggleAssignmentRequest, 
+    db = Depends(get_db)
+):
     try:
         with db.cursor() as cursor:
-            # בדיקה האם האיוש כבר קיים
+            # 1. בדיקה אם העובד כבר משובץ בבלוק הזמן הזה
             check_query = """
                 SELECT id FROM employee_schedule 
                 WHERE timestamp = %s AND employee_id = %s;
@@ -77,12 +84,12 @@ async def toggle_assignment(request: ToggleAssignmentRequest, db = Depends(get_d
             existing = cursor.fetchone()
 
             if existing:
-                # Toggle Off: אם קיים, נמחק
+                # הסרת איוש
                 delete_query = "DELETE FROM employee_schedule WHERE id = %s;"
                 cursor.execute(delete_query, (existing[0],))
                 message = "Assignment removed"
             else:
-                # Toggle On: אם לא קיים, נוסיף
+                # הוספת איוש
                 insert_query = """
                     INSERT INTO employee_schedule (employee_id, timestamp) 
                     VALUES (%s, %s);
@@ -91,21 +98,24 @@ async def toggle_assignment(request: ToggleAssignmentRequest, db = Depends(get_d
                 message = "Assignment added"
                 
             db.commit()
-        return {"status": "success", "message": message}
+            print(f"✅ [Toggle Success]: {message} for employee {request.employee_id} at {request.time_block}")
+            return {"status": "success", "message": message}
 
     except Exception as e:
         db.rollback()
+        print(f"❌ [Toggle Error]: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Toggle assignment failed: {str(e)}")
 
-# 🔥 ה-Endpoint החדש עבור כפתור ה-Auto-Schedule
-@router.post("/auto-schedule")
+@router.post("/auto-schedule", dependencies=[Depends(require_manager)])
 async def run_auto_scheduler(request: AutoScheduleRequest):
     try:
-        # קריאה למנוע השיבוץ שרץ על החוקים והאילוצים
+        print(f"🚀 [Auto-Scheduler]: Starting scheduling process for date: {request.date}")
         result = auto_schedule_workforce(request.date)
         return result
     except Exception as e:
+        print(f"❌ [Auto-Scheduler Error]: {str(e)}")
+        # מחזירים שגיאה מפורטת כדי למנוע נפילה של ה-CORS
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Auto-scheduler failed: {str(e)}"
+            detail=f"Auto-scheduler processing failed: {str(e)}"
         )
